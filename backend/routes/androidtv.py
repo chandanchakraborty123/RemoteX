@@ -33,7 +33,15 @@ class ScanIn(BaseModel):
 @router.post("/scan")
 async def scan(body: ScanIn | None = None):
     timeout = body.timeout if body else 5.0
-    devices = await discover_android_tvs(timeout=timeout)
+    try:
+        devices = await discover_android_tvs(timeout=timeout)
+    except RuntimeError as exc:
+        return {
+            "ok": False,
+            "count": 0,
+            "devices": [],
+            "message": str(exc),
+        }
     return {
         "ok": True,
         "count": len(devices),

@@ -5,254 +5,270 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useEffect, useRef } from 'react';
 import {
   Animated,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getApiBaseUrl, getAppAccessUrl } from '../config';
+import { getAppAccessUrl } from '../config';
 import { useApp } from '../context/AppContext';
 import type { RootStackParamList } from '../navigation/types';
-import { colors, spacing, typography } from '../theme';
+import { colors, spacing } from '../theme';
 
 export function WelcomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { activeDevice, devices } = useApp();
-  const float = useRef(new Animated.Value(0)).current;
   const accessUrl = getAppAccessUrl();
-  const apiUrl = getApiBaseUrl();
+
+  const enter = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    Animated.timing(enter, {
+      toValue: 1,
+      duration: 650,
+      useNativeDriver: true,
+    }).start();
+
     Animated.loop(
       Animated.sequence([
-        Animated.timing(float, { toValue: 1, duration: 2200, useNativeDriver: true }),
-        Animated.timing(float, { toValue: 0, duration: 2200, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 2600, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 2600, useNativeDriver: true }),
       ]),
     ).start();
-  }, [float]);
+  }, [enter, pulse]);
 
-  const translateY = float.interpolate({ inputRange: [0, 1], outputRange: [0, -10] });
+  const rise = enter.interpolate({ inputRange: [0, 1], outputRange: [18, 0] });
+  const glowScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
+  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.55] });
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + spacing.xl }]}>
+    <View style={styles.root}>
       <LinearGradient
-        colors={['rgba(88,101,242,0.22)', 'transparent']}
-        style={styles.glow}
+        colors={['#0E1424', '#0B0F19', '#080B14']}
+        style={StyleSheet.absoluteFill}
       />
 
-      <Text style={styles.brand}>RemoteX</Text>
-      <Text style={styles.title}>One Remote.{'\n'}Every Device.</Text>
-      <Text style={styles.subtitle}>
-        Control your entertainment and smart devices from one powerful remote.
-      </Text>
+      <Animated.View
+        style={[
+          styles.glowA,
+          { opacity: glowOpacity, transform: [{ scale: glowScale }] },
+        ]}
+      />
+      <View style={styles.glowB} />
 
-      {accessUrl ? (
-        <View style={styles.accessBox}>
-          <Text style={styles.accessLabel}>Open on any device (same Wi‑Fi)</Text>
-          <Text style={styles.accessUrl} selectable>
-            {accessUrl}
-          </Text>
-          <Text style={styles.accessMeta} selectable>
-            API · {apiUrl}
-          </Text>
-        </View>
-      ) : null}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop: insets.top + spacing.xxl,
+            paddingBottom: Math.max(insets.bottom, 16) + 96,
+          },
+        ]}
+        showsVerticalScrollIndicator={false}
+        bounces
+        nestedScrollEnabled
+      >
+        <Animated.View style={{ opacity: enter, transform: [{ translateY: rise }] }}>
+          <Text style={styles.brand}>RemoteX</Text>
 
-      <Animated.View style={[styles.preview, { transform: [{ translateY }] }]}>
-        <LinearGradient
-          colors={['#1A2336', '#111827']}
-          style={styles.previewInner}
-        >
-          <View style={styles.previewTop}>
-            <View style={styles.powerDot} />
-            <Text style={styles.previewLabel}>Smart Remote</Text>
+          <Text style={styles.headline}>
+            One Remote.{'\n'}
+            <Text style={styles.headlineAccent}>Every Device.</Text>
+          </Text>
+
+          <Text style={styles.support}>
+            Scan your Wi‑Fi, pair once, control everything from your phone.
+          </Text>
+
+          <View style={styles.ctaBlock}>
+            <Pressable
+              onPress={() => navigation.navigate('Scan')}
+              style={({ pressed }) => [pressed && styles.pressed]}
+            >
+              <LinearGradient
+                colors={['#6B75F5', '#5865F2', '#4F46E5']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.primaryCta}
+              >
+                <View style={styles.ctaIcon}>
+                  <Ionicons name="wifi" size={22} color="#fff" />
+                </View>
+                <Text style={styles.primaryCtaText}>Scan for devices</Text>
+                <Ionicons name="arrow-forward" size={18} color="rgba(255,255,255,0.9)" />
+              </LinearGradient>
+            </Pressable>
+
+            <View style={styles.secondaryRow}>
+              <Pressable
+                onPress={() => navigation.navigate('DeviceType')}
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+              >
+                <Ionicons name="add" size={18} color={colors.text} />
+                <Text style={styles.secondaryBtnText}>Add manually</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => navigation.navigate('Devices' as never)}
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+              >
+                <Ionicons name="grid-outline" size={16} color={colors.text} />
+                <Text style={styles.secondaryBtnText}>
+                  My devices{devices.length ? ` (${devices.length})` : ''}
+                </Text>
+              </Pressable>
+            </View>
           </View>
-          <View style={styles.previewPad} />
-          <View style={styles.previewRow}>
-            <View style={styles.previewBtn} />
-            <View style={[styles.previewBtn, styles.previewBtnAccent]} />
-            <View style={styles.previewBtn} />
-          </View>
-        </LinearGradient>
-      </Animated.View>
 
-      <View style={styles.actions}>
-        <Pressable
-          style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.9 }]}
-          onPress={() => navigation.navigate('Scan')}
-        >
-          <Ionicons name="search-outline" size={20} color="#fff" />
-          <Text style={styles.primaryText}>Scan for devices</Text>
-        </Pressable>
+          {activeDevice ? (
+            <Pressable
+              onPress={() => navigation.navigate('Remote')}
+              style={({ pressed }) => [styles.continue, pressed && styles.pressed]}
+            >
+              <View style={styles.continueLeft}>
+                <View
+                  style={[
+                    styles.statusDot,
+                    {
+                      backgroundColor:
+                        activeDevice.status === 'connected'
+                          ? colors.success
+                          : colors.textSecondary,
+                    },
+                  ]}
+                />
+                <View>
+                  <Text style={styles.continueEyebrow}>Continue</Text>
+                  <Text style={styles.continueName} numberOfLines={1}>
+                    {activeDevice.name}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.continueAction}>
+                <Text style={styles.continueActionText}>Open</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+              </View>
+            </Pressable>
+          ) : (
+            <View style={styles.emptyHint}>
+              <Ionicons name="tv-outline" size={18} color={colors.textSecondary} />
+              <Text style={styles.emptyHintText}>
+                Your TVs will show up here after you scan
+              </Text>
+            </View>
+          )}
 
-        <Pressable
-          style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }]}
-          onPress={() => navigation.navigate('DeviceType')}
-        >
-          <LinearGradient colors={['#5865F2', '#7C3AED']} style={styles.primaryGradient}>
-            <Ionicons name="add-circle-outline" size={20} color="#fff" />
-            <Text style={styles.primaryText}>Add New Device</Text>
-          </LinearGradient>
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.9 }]}
-          onPress={() => {
-            if (activeDevice) {
-              navigation.navigate('Remote');
-            } else {
-              navigation.navigate('MainTabs');
-            }
-          }}
-        >
-          <Ionicons name="phone-portrait-outline" size={18} color={colors.text} />
-          <Text style={styles.secondaryText}>
-            My Devices{devices.length ? ` (${devices.length})` : ''}
-          </Text>
-        </Pressable>
-      </View>
+          {accessUrl ? (
+            <Text style={styles.footerNote} selectable>
+              Also open on phone · {accessUrl.replace(/^https?:\/\//, '')}
+            </Text>
+          ) : null}
+        </Animated.View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingHorizontal: spacing.xl,
   },
-  glow: {
+  glowA: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+    top: -40,
+    left: -40,
+    width: 280,
     height: 280,
+    borderRadius: 140,
+    backgroundColor: 'rgba(88,101,242,0.28)',
+  },
+  glowB: {
+    position: 'absolute',
+    bottom: 120,
+    right: -80,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(124,58,237,0.12)',
+  },
+  scroll: {
+    flex: 1,
+    ...(Platform.OS === 'web' ? ({ overflow: 'auto' } as object) : null),
+  },
+  content: {
+    paddingHorizontal: 28,
+    justifyContent: 'center',
+    flexGrow: 1,
   },
   brand: {
-    ...typography.label,
-    color: colors.primary,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    marginBottom: spacing.md,
+    fontSize: 40,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -1.2,
+    marginBottom: 28,
   },
-  title: {
-    ...typography.hero,
-    color: colors.text,
-    marginBottom: spacing.md,
+  headline: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.92)',
+    letterSpacing: -0.4,
+    marginBottom: 12,
   },
-  subtitle: {
-    ...typography.subtitle,
-    color: colors.textSecondary,
-    maxWidth: 320,
-  },
-  accessBox: {
-    marginTop: spacing.xl,
-    padding: spacing.lg,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    gap: 4,
-  },
-  accessLabel: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  accessUrl: {
-    color: colors.primary,
+  headlineAccent: {
+    color: '#8B93F7',
     fontWeight: '700',
-    fontSize: 16,
   },
-  accessMeta: {
+  support: {
+    fontSize: 15,
+    lineHeight: 23,
     color: colors.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
+    maxWidth: 300,
+    marginBottom: 36,
   },
-  preview: {
-    marginTop: spacing.xxl,
-    alignItems: 'center',
+  ctaBlock: {
+    gap: 16,
+    marginBottom: 28,
   },
-  previewInner: {
-    width: 180,
-    borderRadius: 28,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  previewTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  powerDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.danger,
-  },
-  previewLabel: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
-  previewPad: {
-    height: 88,
+  primaryCta: {
+    height: 58,
     borderRadius: 18,
-    backgroundColor: colors.touchpad,
-    borderWidth: 1,
-    borderColor: 'rgba(88,101,242,0.25)',
-    marginBottom: spacing.md,
-  },
-  previewRow: {
+    paddingHorizontal: 18,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
   },
-  previewBtn: {
+  ctaIcon: {
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: colors.card,
-  },
-  previewBtnAccent: {
-    backgroundColor: colors.primary,
-  },
-  actions: {
-    marginTop: 'auto',
-    marginBottom: spacing.xxxl,
-    gap: spacing.md,
-  },
-  scanBtn: {
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: colors.primary,
-    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
   },
-  primaryBtn: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  primaryGradient: {
-    height: 56,
-    borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  primaryText: {
+  primaryCtaText: {
+    flex: 1,
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
   },
+  pressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
+  },
+  secondaryRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   secondaryBtn: {
-    height: 56,
+    flex: 1,
+    height: 52,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
@@ -260,11 +276,75 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
+    gap: 8,
   },
-  secondaryText: {
+  secondaryBtnText: {
     color: colors.text,
-    fontSize: 16,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  continue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    backgroundColor: 'rgba(23,32,51,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(38,50,71,0.9)',
+  },
+  continueLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    paddingRight: 12,
+  },
+  statusDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  continueEyebrow: {
+    color: colors.textSecondary,
+    fontSize: 11,
     fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  continueName: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  continueAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  continueActionText: {
+    color: colors.primary,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  emptyHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+  },
+  emptyHintText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    flex: 1,
+    lineHeight: 18,
+  },
+  footerNote: {
+    marginTop: 28,
+    color: 'rgba(148,163,184,0.55)',
+    fontSize: 11,
   },
 });

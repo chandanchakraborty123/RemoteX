@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -11,24 +12,111 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheet } from '../components/BottomSheet';
-import { ConnectionBadge } from '../components/ConnectionBadge';
-import { RemoteButton } from '../components/RemoteButton';
+import { AppShortcutIcon } from '../components/AppShortcutIcon';
 import { TouchPad } from '../components/TouchPad';
-import { VoiceButton } from '../components/VoiceButton';
 import { useApp } from '../context/AppContext';
-import { DEFAULT_APP_SHORTCUTS, QUICK_ACTIONS } from '../data/mockDevices';
+import { DEFAULT_APP_SHORTCUTS } from '../data/mockDevices';
 import type { RootStackParamList } from '../navigation/types';
 import { deviceService } from '../services/deviceService';
-import { colors, spacing, typography } from '../theme';
+import { colors } from '../theme';
 import type { RemoteActionType } from '../types';
 
-const SAMPLE_VOICE = [
-  'Open YouTube',
-  'Set volume to 30',
-  'Search Arijit Singh',
-  'Go to Netflix',
-  'Switch to HDMI 2',
+type PadPosition = 'top' | 'center' | 'bottom';
+
+const BTN = 68;
+const BTN_SM = 60;
+const MIC = 84;
+
+const SAMPLE_VOICE = ['Open YouTube', 'Set volume to 30', 'Go to Netflix', 'Mute'];
+
+const POSITIONS: { id: PadPosition; label: string }[] = [
+  { id: 'top', label: 'Top' },
+  { id: 'center', label: 'Center' },
+  { id: 'bottom', label: 'Bottom' },
 ];
+
+function Rocker({
+  title,
+  onUp,
+  onDown,
+}: {
+  title: string;
+  onUp: () => void;
+  onDown: () => void;
+}) {
+  return (
+    <View style={styles.rocker}>
+      <Pressable
+        onPress={onUp}
+        style={({ pressed }) => [styles.rockerHalf, styles.rockerTop, pressed && styles.rockerPressed]}
+      >
+        <Text style={styles.rockerPlus}>+</Text>
+      </Pressable>
+      <View style={styles.rockerMid}>
+        <Text style={styles.rockerTitle}>{title}</Text>
+      </View>
+      <Pressable
+        onPress={onDown}
+        style={({ pressed }) => [styles.rockerHalf, styles.rockerBottom, pressed && styles.rockerPressed]}
+      >
+        <Text style={styles.rockerMinus}>−</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function RoundButton({
+  label,
+  icon,
+  onPress,
+  size = BTN,
+  tone = 'default',
+}: {
+  label: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  size?: number;
+  tone?: 'default' | 'power' | 'ok' | 'dark';
+}) {
+  const toneStyle =
+    tone === 'power'
+      ? styles.tonePower
+      : tone === 'ok'
+        ? styles.toneOk
+        : tone === 'dark'
+          ? styles.toneDark
+          : styles.toneDefault;
+
+  const color =
+    tone === 'power' ? colors.danger : tone === 'ok' ? '#fff' : colors.text;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.round,
+        toneStyle,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          opacity: pressed ? 0.88 : 1,
+          transform: [{ scale: pressed ? 0.96 : 1 }],
+        },
+      ]}
+    >
+      <View style={styles.roundInner}>
+        {icon ? <Ionicons name={icon} size={22} color={color} /> : null}
+        <Text
+          style={[styles.roundLabel, { color }, !icon && styles.roundLabelOnly]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
 
 export function RemoteScreen() {
   const insets = useSafeAreaInsets();
@@ -43,28 +131,22 @@ export function RemoteScreen() {
     setFeedback,
     upsertDevice,
     disconnectDevice,
+    settings,
+    updateSettings,
   } = useApp();
 
   const [listening, setListening] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
-  const [voiceResult, setVoiceResult] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const padPos: PadPosition = settings.touchpadPosition ?? 'center';
 
   useEffect(() => {
     if (!lastFeedback) return;
-    const t = setTimeout(() => setFeedback(null), 2200);
+    setToast(lastFeedback);
+    const t = setTimeout(() => setToast(null), 2000);
     return () => clearTimeout(t);
-  }, [lastFeedback, setFeedback]);
-
-  if (!activeDevice) {
-    return (
-      <View style={[styles.container, styles.empty, { paddingTop: insets.top }]}>
-        <Text style={styles.emptyTitle}>No device selected</Text>
-        <Pressable style={styles.cta} onPress={() => navigation.navigate('DeviceType')}>
-          <Text style={styles.ctaText}>Add a device</Text>
-        </Pressable>
-      </View>
-    );
-  }
+  }, [lastFeedback]);
 
   const fire = (type: RemoteActionType, payload?: Record<string, string | number | boolean>) => {
     void sendAction({ type, payload });
@@ -72,375 +154,523 @@ export function RemoteScreen() {
 
   const handleVoice = async () => {
     setListening(true);
-    setVoiceResult('Listening...');
-    await new Promise((r) => setTimeout(r, 900));
+    setToast('Listening...');
+    await new Promise((r) => setTimeout(r, 800));
     const phrase = SAMPLE_VOICE[Math.floor(Math.random() * SAMPLE_VOICE.length)];
-    setVoiceResult(phrase);
-    const action = deviceService.parseVoiceCommand(phrase);
-    await sendAction(action);
+    setToast(phrase);
+    await sendAction(deviceService.parseVoiceCommand(phrase));
     setListening(false);
   };
 
   const reconnect = async () => {
-    const result = await deviceService.connect({
-      ...activeDevice,
-      status: 'connecting',
-    });
+    if (!activeDevice) return;
+    const result = await deviceService.connect({ ...activeDevice, status: 'connecting' });
     if (result.status === 'connected') {
       await upsertDevice(result.device);
-      setFeedback('Reconnected');
+      setFeedback('Connected');
       return;
     }
-    if (result.status === 'needs_pairing') {
-      setFeedback('Pairing required — open Connect and enter the TV code');
-      return;
-    }
-    setFeedback(result.message);
+    setFeedback(result.status === 'needs_pairing' ? 'Need pairing code' : result.message);
   };
 
-  return (
-    <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.navigate('MainTabs')} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
+  const touchSection = useMemo(
+    () => (
+      <View style={styles.touchBlock}>
+        <View style={styles.moveRow}>
+          <Text style={styles.moveLabel}>Move pad</Text>
+          <View style={styles.moveChips}>
+            {POSITIONS.map((p) => (
+              <Pressable
+                key={p.id}
+                onPress={() => void updateSettings({ touchpadPosition: p.id })}
+                style={[styles.moveChip, padPos === p.id && styles.moveChipOn]}
+              >
+                <Text style={[styles.moveChipText, padPos === p.id && styles.moveChipTextOn]}>
+                  {p.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+        <TouchPad onAction={(type) => fire(type)} />
+      </View>
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [padPos],
+  );
+
+  if (!activeDevice) {
+    return (
+      <View style={[styles.root, styles.centerFill, { paddingTop: insets.top }]}>
+        <Text style={styles.emptyTitle}>No device selected</Text>
+        <Pressable style={styles.pill} onPress={() => navigation.navigate('DeviceType')}>
+          <Text style={styles.pillText}>Add a device</Text>
         </Pressable>
-        <View style={styles.headerCenter}>
-          <Text style={styles.deviceName}>{activeDevice.name}</Text>
-          <ConnectionBadge status={activeDevice.status} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.root, { paddingTop: insets.top + 4 }]}>
+      <LinearGradient colors={['#151B2C', colors.background]} style={StyleSheet.absoluteFill} />
+
+      <View style={styles.header}>
+        <Pressable
+          style={styles.headerBtn}
+          onPress={() => navigation.navigate('MainTabs', { screen: 'Devices' } as never)}
+        >
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
+        </Pressable>
+        <View style={styles.headerMid}>
+          <Text style={styles.title} numberOfLines={1}>
+            {activeDevice.name}
+          </Text>
+          <Text
+            style={[
+              styles.status,
+              { color: activeDevice.status === 'connected' ? colors.success : colors.danger },
+            ]}
+          >
+            {activeDevice.status === 'connected' ? 'Connected' : 'Disconnected'}
+          </Text>
         </View>
-        <View style={styles.headerActions}>
-          <Pressable onPress={() => void toggleFavoriteDevice(activeDevice.id)} hitSlop={8}>
-            <Ionicons
-              name={activeDevice.favorite ? 'star' : 'star-outline'}
-              size={20}
-              color={activeDevice.favorite ? colors.warning : colors.textSecondary}
-            />
-          </Pressable>
-          {activeDevice.status === 'connected' ? (
-            <Pressable onPress={() => void disconnectDevice(activeDevice.id)} hitSlop={8}>
-              <Ionicons name="unlink-outline" size={20} color={colors.danger} />
-            </Pressable>
-          ) : (
-            <Pressable onPress={() => void reconnect()} hitSlop={8}>
-              <Ionicons name="refresh-outline" size={20} color={colors.textSecondary} />
-            </Pressable>
-          )}
-          <Pressable onPress={() => navigation.navigate('MainTabs')} hitSlop={8}>
-            <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
-          </Pressable>
-        </View>
+        <Pressable
+          style={styles.headerBtn}
+          onPress={() => void toggleFavoriteDevice(activeDevice.id)}
+        >
+          <Ionicons
+            name={activeDevice.favorite ? 'star' : 'star-outline'}
+            size={20}
+            color={activeDevice.favorite ? colors.warning : colors.textSecondary}
+          />
+        </Pressable>
       </View>
 
-      {activeDevice.status === 'disconnected' ? (
-        <View style={styles.lostBanner}>
-          <Text style={styles.lostText}>Disconnected</Text>
-          <Pressable onPress={() => void reconnect()}>
-            <Text style={styles.reconnect}>Reconnect</Text>
-          </Pressable>
-        </View>
-      ) : (
-        <View style={styles.connectedBar}>
-          <Text style={styles.connectedHint}>Session active</Text>
-          <Pressable onPress={() => void disconnectDevice(activeDevice.id)}>
-            <Text style={styles.disconnectLink}>Disconnect</Text>
-          </Pressable>
-        </View>
-      )}
+      {activeDevice.status !== 'connected' ? (
+        <Pressable style={styles.reconnect} onPress={() => void reconnect()}>
+          <Text style={styles.reconnectText}>Tap to reconnect</Text>
+        </Pressable>
+      ) : null}
 
-      {lastFeedback || voiceResult ? (
+      {toast ? (
         <View style={styles.toast}>
-          <Text style={styles.toastText}>{lastFeedback ?? voiceResult}</Text>
+          <Text style={styles.toastText}>{toast}</Text>
         </View>
       ) : null}
 
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}
+        contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 24 }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.rowBetween}>
-          <RemoteButton icon="power" variant="danger" size="lg" onPress={() => fire('POWER')} />
-          <RemoteButton label="Input" size="md" onPress={() => fire('INPUT', { source: 'HDMI 1' })} />
-          <RemoteButton icon="volume-mute" size="lg" onPress={() => fire('MUTE')} />
-        </View>
-
-        <View style={styles.section}>
-          <TouchPad onAction={(type) => fire(type)} />
-        </View>
-
-        <View style={styles.rowBetween}>
-          <RemoteButton label="Back" icon="arrow-back" onPress={() => fire('BACK')} />
-          <RemoteButton label="Home" icon="home" onPress={() => fire('HOME')} />
-          <RemoteButton label="Menu" icon="menu" onPress={() => fire('MENU')} />
-          <RemoteButton label="OK" variant="primary" onPress={() => fire('OK')} />
-        </View>
-
-        <View style={styles.volumeChannel}>
-          <View style={styles.controlCol}>
-            <RemoteButton label="VOL +" size="lg" onPress={() => fire('VOLUME_UP')} />
-            <RemoteButton label="Mute" size="sm" onPress={() => fire('MUTE')} />
-            <RemoteButton label="VOL -" size="lg" onPress={() => fire('VOLUME_DOWN')} />
+        {/* Row 1 — equal 3 columns */}
+        <View style={styles.grid3}>
+          <View style={styles.cell}>
+            <RoundButton label="Power" icon="power" tone="power" onPress={() => fire('POWER')} />
           </View>
-          <View style={styles.controlCol}>
-            <RemoteButton label="CH +" size="lg" onPress={() => fire('CHANNEL_UP')} />
-            <View style={{ height: 48 }} />
-            <RemoteButton label="CH -" size="lg" onPress={() => fire('CHANNEL_DOWN')} />
+          <View style={styles.cell}>
+            <RoundButton label="Input" onPress={() => fire('INPUT', { source: 'HDMI 1' })} />
+          </View>
+          <View style={styles.cell}>
+            <RoundButton label="Mute" icon="volume-mute" onPress={() => fire('MUTE')} />
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>App shortcuts</Text>
+        {padPos === 'top' ? touchSection : null}
+        {padPos === 'center' ? touchSection : null}
+
+        {/* Row 2 — equal 4 columns */}
+        <View style={styles.grid4}>
+          <View style={styles.cell}>
+            <RoundButton label="Back" icon="arrow-back" size={BTN_SM} onPress={() => fire('BACK')} />
+          </View>
+          <View style={styles.cell}>
+            <RoundButton label="Home" icon="home" size={BTN_SM} onPress={() => fire('HOME')} />
+          </View>
+          <View style={styles.cell}>
+            <RoundButton label="Menu" icon="menu" size={BTN_SM} onPress={() => fire('MENU')} />
+          </View>
+          <View style={styles.cell}>
+            <RoundButton label="OK" tone="ok" size={BTN_SM} onPress={() => fire('OK')} />
+          </View>
+        </View>
+
+        {/* Volume rocker · Voice · Channel rocker */}
+        <View style={styles.tri}>
+          <View style={styles.triCol}>
+            <Rocker
+              title="VOL"
+              onUp={() => fire('VOLUME_UP')}
+              onDown={() => fire('VOLUME_DOWN')}
+            />
+          </View>
+
+          <View style={styles.triCol}>
+            <View style={styles.micSlot}>
+              <Pressable
+                style={[styles.mic, listening && styles.micLive]}
+                onPress={() => void handleVoice()}
+              >
+                <Ionicons name={listening ? 'radio' : 'mic'} size={28} color="#fff" />
+                <Text style={styles.micText}>{listening ? '...' : 'Voice'}</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.triCol}>
+            <Rocker
+              title="CH"
+              onUp={() => fire('CHANNEL_UP')}
+              onDown={() => fire('CHANNEL_DOWN')}
+            />
+          </View>
+        </View>
+
+        {padPos === 'bottom' ? touchSection : null}
+
+        <Text style={styles.section}>Apps</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.apps}>
           {DEFAULT_APP_SHORTCUTS.map((app) => (
             <Pressable
               key={app.id}
-              style={[styles.appChip, { borderColor: app.color }]}
+              style={styles.appBtn}
               onPress={() => fire('OPEN_APP', { app: app.packageHint })}
             >
-              <View style={[styles.appDot, { backgroundColor: app.color }]} />
+              <AppShortcutIcon app={app} size={16} />
               <Text style={styles.appName}>{app.name}</Text>
-            </Pressable>
-          ))}
-          <Pressable style={styles.addChip}>
-            <Ionicons name="add" size={18} color={colors.textSecondary} />
-            <Text style={styles.addText}>Add</Text>
-          </Pressable>
-        </ScrollView>
-
-        <Text style={styles.sectionTitle}>Quick actions</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.apps}>
-          {QUICK_ACTIONS.map((item) => (
-            <Pressable
-              key={item.id}
-              style={styles.quickChip}
-              onPress={() => fire(item.action)}
-            >
-              <Ionicons name={item.icon as keyof typeof Ionicons.glyphMap} size={16} color={colors.primary} />
-              <Text style={styles.quickText}>{item.label}</Text>
             </Pressable>
           ))}
         </ScrollView>
 
         <View style={styles.tools}>
-          <Pressable style={styles.toolBtn} onPress={() => navigation.navigate('Keyboard')}>
-            <Ionicons name="keypad-outline" size={20} color={colors.text} />
-            <Text style={styles.toolText}>Keyboard</Text>
-          </Pressable>
-          <Pressable style={styles.toolBtn} onPress={() => setAiOpen(true)}>
-            <Ionicons name="sparkles-outline" size={20} color={colors.text} />
-            <Text style={styles.toolText}>AI Remote</Text>
-          </Pressable>
-          <Pressable style={styles.toolBtn} onPress={() => navigation.navigate('Macros')}>
-            <Ionicons name="flash-outline" size={20} color={colors.text} />
-            <Text style={styles.toolText}>Macros</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.sectionTitle}>Scenes</Text>
-        <View style={styles.macroRow}>
-          {macros.slice(0, 2).map((macro) => (
-            <Pressable
-              key={macro.id}
-              style={styles.macroCard}
-              onPress={() => void runMacro(macro)}
-            >
-              <Ionicons
-                name={macro.icon as keyof typeof Ionicons.glyphMap}
-                size={20}
-                color={colors.secondary}
-              />
-              <Text style={styles.macroName}>{macro.name}</Text>
-              <Text style={styles.macroMeta}>{macro.actions.length} actions</Text>
+          {[
+            { label: 'Keyboard', icon: 'keypad' as const, onPress: () => navigation.navigate('Keyboard') },
+            { label: 'AI', icon: 'sparkles' as const, onPress: () => setAiOpen(true) },
+            { label: 'Macros', icon: 'flash' as const, onPress: () => navigation.navigate('Macros') },
+            {
+              label: activeDevice.status === 'connected' ? 'Disconnect' : 'Reconnect',
+              icon: (activeDevice.status === 'connected' ? 'unlink' : 'refresh') as keyof typeof Ionicons.glyphMap,
+              onPress: () =>
+                activeDevice.status === 'connected'
+                  ? void disconnectDevice(activeDevice.id)
+                  : void reconnect(),
+            },
+          ].map((t) => (
+            <Pressable key={t.label} style={styles.tool} onPress={t.onPress}>
+              <Ionicons name={t.icon} size={16} color={colors.primary} />
+              <Text style={styles.toolText}>{t.label}</Text>
             </Pressable>
           ))}
         </View>
+
+        {macros.length > 0 ? (
+          <View style={styles.macroRow}>
+            {macros.slice(0, 2).map((m) => (
+              <Pressable key={m.id} style={styles.macro} onPress={() => void runMacro(m)}>
+                <Text style={styles.macroName}>{m.name}</Text>
+                <Text style={styles.macroRun}>Run</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
       </ScrollView>
 
-      <View style={[styles.fab, { bottom: insets.bottom + 18 }]}>
-        <VoiceButton listening={listening} onPress={() => void handleVoice()} />
-      </View>
-
-      <BottomSheet visible={aiOpen} title="AI Remote" onClose={() => setAiOpen(false)}>
-        <Text style={styles.aiHint}>
-          Natural language commands will route through an LLM later. Try a sample:
-        </Text>
-        {['Open Netflix', 'Set volume to 25', 'Turn off the TV in 30 minutes', 'Go to HDMI 2'].map(
-          (cmd) => (
-            <Pressable
-              key={cmd}
-              style={styles.aiCmd}
-              onPress={async () => {
-                setAiOpen(false);
-                const action = deviceService.parseVoiceCommand(cmd);
-                await sendAction(action);
-              }}
-            >
-              <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.primary} />
-              <Text style={styles.aiCmdText}>{cmd}</Text>
-            </Pressable>
-          ),
-        )}
+      <BottomSheet visible={aiOpen} title="AI help" onClose={() => setAiOpen(false)}>
+        {['Open Netflix', 'Open YouTube', 'Mute'].map((cmd) => (
+          <Pressable
+            key={cmd}
+            style={styles.aiCmd}
+            onPress={async () => {
+              setAiOpen(false);
+              await sendAction(deviceService.parseVoiceCommand(cmd));
+            }}
+          >
+            <Text style={styles.aiCmdText}>{cmd}</Text>
+          </Pressable>
+        ))}
       </BottomSheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  empty: { alignItems: 'center', justifyContent: 'center', gap: spacing.lg },
-  emptyTitle: { ...typography.title, color: colors.text },
-  cta: {
+  root: { flex: 1, backgroundColor: colors.background },
+  centerFill: { alignItems: 'center', justifyContent: 'center', gap: 16 },
+  emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
+  pill: {
     backgroundColor: colors.primary,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 999,
   },
-  ctaText: { color: '#fff', fontWeight: '700' },
+  pillText: { color: '#fff', fontWeight: '700' },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
+    paddingHorizontal: 14,
+    marginBottom: 8,
   },
-  headerCenter: { flex: 1, alignItems: 'center', gap: 4 },
-  deviceName: { ...typography.body, color: colors.text, fontWeight: '700' },
-  headerActions: { flexDirection: 'row', gap: spacing.md, minWidth: 96, justifyContent: 'flex-end' },
-  lostBanner: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-    backgroundColor: 'rgba(239,68,68,0.12)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    padding: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  connectedBar: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
+  headerBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.card,
-    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerMid: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
+  title: { color: colors.text, fontWeight: '800', fontSize: 16 },
+  status: { fontSize: 12, fontWeight: '700', marginTop: 2 },
+
+  reconnect: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    paddingVertical: 10,
     alignItems: 'center',
   },
-  connectedHint: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
-  disconnectLink: { color: colors.danger, fontWeight: '700', fontSize: 13 },
-  lostText: { color: colors.danger, fontWeight: '600' },
-  reconnect: { color: colors.primary, fontWeight: '700' },
+  reconnectText: { color: colors.danger, fontWeight: '700' },
+
   toast: {
     alignSelf: 'center',
     backgroundColor: colors.card,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginBottom: 8,
   },
-  toastText: { color: colors.text, fontSize: 13, fontWeight: '600' },
-  content: { paddingHorizontal: spacing.lg, gap: spacing.lg },
-  rowBetween: {
+  toastText: { color: colors.text, fontWeight: '600', fontSize: 12 },
+
+  body: {
+    paddingHorizontal: 16,
+    gap: 20,
+  },
+
+  grid3: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  grid4: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  round: {
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roundInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingHorizontal: 4,
+  },
+  roundLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  roundLabelOnly: {
+    fontSize: 13,
+  },
+  toneDefault: {
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+  },
+  tonePower: {
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    borderColor: 'rgba(239,68,68,0.4)',
+  },
+  toneOk: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  toneDark: {
+    backgroundColor: '#1C2740',
+    borderColor: colors.border,
+  },
+
+  tri: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  triCol: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 168,
+  },
+  rocker: {
+    width: 72,
+    height: 168,
+    borderRadius: 36,
+    backgroundColor: '#171F33',
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  rockerHalf: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rockerTop: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  rockerBottom: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  rockerPressed: {
+    backgroundColor: 'rgba(88,101,242,0.18)',
+  },
+  rockerMid: {
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.secondaryBackground,
+  },
+  rockerTitle: {
+    color: colors.textSecondary,
+    fontWeight: '800',
+    fontSize: 11,
+    letterSpacing: 1,
+  },
+  rockerPlus: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: '300',
+    lineHeight: 30,
+  },
+  rockerMinus: {
+    color: colors.text,
+    fontSize: 32,
+    fontWeight: '300',
+    lineHeight: 32,
+  },
+  micSlot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mic: {
+    width: MIC,
+    height: MIC,
+    borderRadius: MIC / 2,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  micLive: { backgroundColor: colors.secondary },
+  micText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+
+  touchBlock: { gap: 10 },
+  moveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 34,
+  },
+  moveLabel: {
+    color: colors.textSecondary,
+    fontWeight: '700',
+    fontSize: 12,
+    lineHeight: 34,
+  },
+  moveChips: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  moveChip: {
+    height: 34,
+    paddingHorizontal: 12,
+    borderRadius: 17,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moveChipOn: {
+    backgroundColor: 'rgba(88,101,242,0.22)',
+    borderColor: colors.primary,
+  },
+  moveChipText: { color: colors.textSecondary, fontWeight: '700', fontSize: 12 },
+  moveChipTextOn: { color: colors.text },
+
+  section: {
+    color: colors.textSecondary,
+    fontWeight: '800',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  apps: { gap: 8 },
+  appBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.card,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  appName: { color: colors.text, fontWeight: '700', fontSize: 13 },
+
+  tools: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tool: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.card,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  toolText: { color: colors.text, fontWeight: '700', fontSize: 12 },
+
+  macroRow: { flexDirection: 'row', gap: 8 },
+  macro: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  section: { marginTop: spacing.xs },
-  volumeChannel: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: spacing.sm,
-  },
-  controlCol: { alignItems: 'center', gap: spacing.md },
-  sectionTitle: {
-    ...typography.label,
-    color: colors.textSecondary,
-    marginTop: spacing.sm,
-  },
-  apps: { gap: spacing.sm, paddingVertical: spacing.xs },
-  appChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  appDot: { width: 10, height: 10, borderRadius: 5 },
-  appName: { color: colors.text, fontWeight: '600', fontSize: 13 },
-  addChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderStyle: 'dashed',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  addText: { color: colors.textSecondary, fontWeight: '600', fontSize: 13 },
-  quickChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.secondaryBackground,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  quickText: { color: colors.text, fontSize: 12, fontWeight: '600' },
-  tools: { flexDirection: 'row', gap: spacing.sm },
-  toolBtn: {
-    flex: 1,
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    gap: 6,
-  },
-  toolText: { color: colors.text, fontSize: 12, fontWeight: '600' },
-  macroRow: { flexDirection: 'row', gap: spacing.md },
-  macroCard: {
-    flex: 1,
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: 6,
-  },
   macroName: { color: colors.text, fontWeight: '700' },
-  macroMeta: { color: colors.textSecondary, fontSize: 12 },
-  fab: {
-    position: 'absolute',
-    right: spacing.xl,
-  },
-  aiHint: {
-    color: colors.textSecondary,
-    marginBottom: spacing.lg,
-    lineHeight: 20,
-  },
+  macroRun: { color: colors.primary, fontWeight: '800' },
+
   aiCmd: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
     backgroundColor: colors.card,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    padding: 14,
+    marginBottom: 8,
   },
-  aiCmdText: { color: colors.text, fontWeight: '500' },
+  aiCmdText: { color: colors.text, fontWeight: '600' },
 });

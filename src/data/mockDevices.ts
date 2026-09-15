@@ -65,12 +65,12 @@ export const MOCK_DEVICES: Device[] = [
 ];
 
 export const DEFAULT_APP_SHORTCUTS: AppShortcut[] = [
-  { id: 'netflix', name: 'Netflix', packageHint: 'netflix', color: '#E50914' },
-  { id: 'youtube', name: 'YouTube', packageHint: 'youtube', color: '#FF0000' },
-  { id: 'prime', name: 'Prime Video', packageHint: 'prime', color: '#00A8E1' },
-  { id: 'hotstar', name: 'JioHotstar', packageHint: 'hotstar', color: '#1A1F71' },
-  { id: 'live', name: 'Live TV', packageHint: 'live_tv', color: '#5865F2' },
-  { id: 'assistant', name: 'Assistant', packageHint: 'assistant', color: '#7C3AED' },
+  { id: 'netflix', name: 'Netflix', packageHint: 'netflix', color: '#E50914', icon: 'netflix' },
+  { id: 'youtube', name: 'YouTube', packageHint: 'youtube', color: '#FF0000', icon: 'youtube' },
+  { id: 'prime', name: 'Prime Video', packageHint: 'prime', color: '#00A8E1', icon: 'amazon' },
+  { id: 'hotstar', name: 'JioHotstar', packageHint: 'hotstar', color: '#1A1F71', icon: 'play-box' },
+  { id: 'live', name: 'Live TV', packageHint: 'live_tv', color: '#5865F2', icon: 'television-classic' },
+  { id: 'assistant', name: 'Assistant', packageHint: 'assistant', color: '#7C3AED', icon: 'google-assistant' },
 ];
 
 export const DEFAULT_MACROS: Macro[] = [

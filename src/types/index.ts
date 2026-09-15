@@ -99,6 +99,8 @@ export interface AppShortcut {
   name: string;
   packageHint: string;
   color: string;
+  /** MaterialCommunityIcons glyph name */
+  icon: string;
 }
 
 export interface MacroAction {
@@ -131,6 +133,8 @@ export interface AppSettings {
   darkMode: boolean;
   /** FastAPI base URL for Android TV bridge, e.g. http://192.168.1.10:8000 */
   apiBaseUrl?: string;
+  /** Where the gesture pad sits on the remote screen */
+  touchpadPosition?: 'top' | 'center' | 'bottom';
 }
 
 export interface RecentAction {

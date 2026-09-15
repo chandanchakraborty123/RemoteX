@@ -6,12 +6,20 @@ import asyncio
 import logging
 from typing import Any
 
-from zeroconf import IPVersion, ServiceStateChange, Zeroconf
-from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
-
 logger = logging.getLogger("remotex.discovery")
 
 SERVICE_TYPE = "_androidtvremote2._tcp.local."
+
+try:
+    from zeroconf import IPVersion, ServiceStateChange, Zeroconf
+    from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
+
+    _HAS_ZEROCONF = True
+except ModuleNotFoundError:  # pragma: no cover
+    _HAS_ZEROCONF = False
+    IPVersion = object  # type: ignore[misc, assignment]
+    ServiceStateChange = object  # type: ignore[misc, assignment]
+    Zeroconf = object  # type: ignore[misc, assignment]
 
 
 async def discover_android_tvs(timeout: float = 5.0) -> list[dict[str, Any]]:
@@ -19,10 +27,16 @@ async def discover_android_tvs(timeout: float = 5.0) -> list[dict[str, Any]]:
     Browse the LAN for Android TV Remote Protocol v2 services.
     Returns unique devices: name, host, port.
     """
+    if not _HAS_ZEROCONF:
+        raise RuntimeError(
+            "Missing package 'zeroconf'. Run: pip install zeroconf "
+            "(or: pip install -r backend/requirements.txt)"
+        )
+
     found: dict[str, dict[str, Any]] = {}
     resolve_tasks: list[asyncio.Task[None]] = []
 
-    async def resolve(zeroconf: Zeroconf, service_type: str, name: str) -> None:
+    async def resolve(zeroconf: Any, service_type: str, name: str) -> None:
         info = AsyncServiceInfo(service_type, name)
         ok = await info.async_request(zeroconf, 3000)
         if not ok or not info:
@@ -34,7 +48,6 @@ async def discover_android_tvs(timeout: float = 5.0) -> list[dict[str, Any]]:
 
         host = addresses[0]
         friendly = name.split(".")[0] if name else host
-        # Strip common suffixes like "._androidtvremote2"
         friendly = friendly.replace("._androidtvremote2", "").strip() or host
 
         found[host] = {
@@ -51,10 +64,10 @@ async def discover_android_tvs(timeout: float = 5.0) -> list[dict[str, Any]]:
         logger.info("Discovered %s at %s", friendly, host)
 
     def on_service_state_change(
-        zeroconf: Zeroconf,
+        zeroconf: Any,
         service_type: str,
         name: str,
-        state_change: ServiceStateChange,
+        state_change: Any,
     ) -> None:
         if state_change is not ServiceStateChange.Added:
             return

@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   buttonSize: 'normal',
   touchpadSensitivity: 1,
   darkMode: true,
+  touchpadPosition: 'center',
 };
 
 async function readJson<T>(key: string, fallback: T): Promise<T> {

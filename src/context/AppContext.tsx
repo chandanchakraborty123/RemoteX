@@ -50,6 +50,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   touchpadSensitivity: 1,
   darkMode: true,
   apiBaseUrl: getDefaultApiBaseUrl(),
+  touchpadPosition: 'center',
 };
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
