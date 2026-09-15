@@ -72,7 +72,15 @@ export interface DeviceBrand {
   features: string[];
 }
 
-export type DeviceDriver = 'mock' | 'androidtv';
+export type DeviceDriver = 'mock' | 'androidtv' | 'webos' | 'ac';
+
+export interface AcDeviceState {
+  power: boolean;
+  temp: number;
+  mode: string;
+  fan: string;
+  transport?: 'ir' | 'wifi';
+}
 
 export interface Device {
   id: string;
@@ -86,9 +94,11 @@ export interface Device {
   favorite?: boolean;
   /** Protocol driver used for this device */
   driver?: DeviceDriver;
-  /** Successfully paired at least once (certs saved on backend) */
+  /** Successfully paired at least once (certs / client key saved on backend) */
   paired?: boolean;
   lastConnectedAt?: number;
+  /** Last known AC climate state (IR / Wi‑Fi) */
+  acState?: AcDeviceState;
 }
 
 export interface RemoteAction {

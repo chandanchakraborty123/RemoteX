@@ -18,7 +18,7 @@ import {
 } from '../services/deviceService';
 import { colors, spacing, typography } from '../theme';
 import type { ConnectionMethod } from '../types';
-import { isAndroidTvPlatform } from '../utils/deviceDrivers';
+import { isAndroidTvPlatform, isWebOsPlatform } from '../utils/deviceDrivers';
 
 const METHOD_LABELS: Record<ConnectionMethod, string> = {
   wifi: 'Wi-Fi',
@@ -37,12 +37,15 @@ export function DeviceConnectionScreen({
   const { deviceType, brand } = route.params;
   const { upsertDevice } = useApp();
   const isAndroidTv = isAndroidTvPlatform(brand.platform);
+  const isWebOs = isWebOsPlatform(brand.platform) || brand.name.toLowerCase() === 'lg';
+  const isAc = deviceType === 'ac';
+  const isLanTv = isAndroidTv || isWebOs;
 
   const [scanning, setScanning] = useState(true);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [devices, setDevices] = useState<DiscoveredDevice[]>([]);
   const [manualIp, setManualIp] = useState('');
-  const [showManual, setShowManual] = useState(isAndroidTv);
+  const [showManual, setShowManual] = useState(isLanTv);
   const [selectedMethod, setSelectedMethod] = useState<ConnectionMethod>(
     brand.connectionMethods.includes('pairing_code')
       ? 'pairing_code'
@@ -52,6 +55,7 @@ export function DeviceConnectionScreen({
   const [pairHost, setPairHost] = useState<string | null>(null);
   const [pairCode, setPairCode] = useState('');
   const [pairMessage, setPairMessage] = useState<string | null>(null);
+  const [pairKind, setPairKind] = useState<'code' | 'prompt'>('code');
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
 
   const [scanMessage, setScanMessage] = useState<string | null>(null);
@@ -60,32 +64,36 @@ export function DeviceConnectionScreen({
     setScanning(true);
     setDevices([]);
     setError(null);
+    if (isAc) {
+      setScanMessage('AC uses IR or Wi‑Fi — pick a method below, then Connect.');
+      setDevices([]);
+      setScanning(false);
+      return;
+    }
     setScanMessage(
-      isAndroidTv
-        ? 'Scanning Wi‑Fi for your TV…'
-        : 'Searching for devices...',
+      isLanTv ? 'Scanning Wi‑Fi for your TV…' : 'Searching for devices...',
     );
     const found = await deviceService.discover(brand.connectionMethods, {
       platform: brand.platform,
-      realScan: isAndroidTv,
+      realScan: isLanTv,
     });
     setDevices(found);
     setScanMessage(
       found.length
         ? `Found ${found.length} device${found.length === 1 ? '' : 's'} nearby`
-        : isAndroidTv
+        : isLanTv
           ? 'No TV found yet. Turn the TV on, stay on the same Wi‑Fi, then Scan Again — or enter IP if you know it.'
           : 'No devices found.',
     );
     setScanning(false);
-  }, [brand.connectionMethods, brand.platform, isAndroidTv]);
+  }, [brand.connectionMethods, brand.platform, isAc, isLanTv]);
 
   useEffect(() => {
     void scan();
   }, [scan]);
 
   useEffect(() => {
-    if (!isAndroidTv) return;
+    if (!isLanTv) return;
     let mounted = true;
     (async () => {
       const { androidTvApi } = await import('../services/androidTvApi');
@@ -95,17 +103,26 @@ export function DeviceConnectionScreen({
     return () => {
       mounted = false;
     };
-  }, [isAndroidTv]);
+  }, [isLanTv]);
 
   const connectTo = async (
-    item: DiscoveredDevice | { name: string; ipAddress: string },
+    item: DiscoveredDevice | { name: string; ipAddress?: string },
   ) => {
-    setConnectingId('id' in item ? item.id : 'manual');
+    setConnectingId('id' in item && item.id ? item.id : 'manual');
     setError(null);
     setPairHost(null);
     setPairMessage(null);
 
+    const driver = isAc
+      ? 'ac'
+      : isWebOs || ('driver' in item && item.driver === 'webos')
+        ? 'webos'
+        : isAndroidTv
+          ? 'androidtv'
+          : 'mock';
+
     const result = await deviceService.connect({
+      id: isAc ? `ac-${brand.id}-${Date.now()}` : undefined,
       name: item.name,
       brand: brand.name,
       platform: brand.platform,
@@ -113,7 +130,16 @@ export function DeviceConnectionScreen({
       connectionType: selectedMethod,
       ipAddress: item.ipAddress,
       status: 'connecting',
-      driver: isAndroidTv ? 'androidtv' : 'mock',
+      driver,
+      acState: isAc
+        ? {
+            power: false,
+            temp: 24,
+            mode: 'cool',
+            fan: 'auto',
+            transport: selectedMethod === 'wifi' ? 'wifi' : 'ir',
+          }
+        : undefined,
     });
 
     setConnectingId(null);
@@ -127,6 +153,10 @@ export function DeviceConnectionScreen({
     if (result.status === 'needs_pairing') {
       setPairHost(result.host);
       setPairMessage(result.message);
+      setPairKind(result.pairKind ?? (driver === 'webos' ? 'prompt' : 'code'));
+      if (driver === 'webos' || result.pairKind === 'prompt') {
+        return;
+      }
       try {
         const start = await deviceService.startAndroidTvPairing(result.host);
         if (!start.ok) {
@@ -141,6 +171,45 @@ export function DeviceConnectionScreen({
     }
 
     setError(result.message);
+  };
+
+  const submitWebOsPair = async () => {
+    if (!pairHost) return;
+    setConnectingId('pair');
+    setError(null);
+    setPairMessage('Waiting for Accept on your LG TV…');
+    try {
+      const finished = await deviceService.pairWebOs(pairHost);
+      if (!finished.ok) {
+        setError(finished.error || 'Pairing timed out');
+        setConnectingId(null);
+        return;
+      }
+      const connected = await deviceService.connect({
+        name: finished.name || `${brand.name} TV`,
+        brand: brand.name,
+        platform: brand.platform,
+        type: deviceType,
+        connectionType: 'local_network',
+        ipAddress: pairHost,
+        status: 'connecting',
+        driver: 'webos',
+      });
+      setConnectingId(null);
+      if (connected.status === 'connected') {
+        await upsertDevice(connected.device);
+        navigation.replace('Remote');
+        return;
+      }
+      setError(
+        connected.status === 'error'
+          ? connected.message
+          : 'Paired, but connection failed — try Connect again',
+      );
+    } catch (e) {
+      setConnectingId(null);
+      setError(e instanceof Error ? e.message : 'webOS pairing failed');
+    }
   };
 
   const submitPairCode = async () => {
@@ -214,12 +283,15 @@ export function DeviceConnectionScreen({
         {brand.name} · {brand.platform}
       </Text>
 
-      {isAndroidTv ? (
+      {isLanTv ? (
         <View style={styles.infoBox}>
-          <Text style={styles.infoTitle}>Automatic scan</Text>
+          <Text style={styles.infoTitle}>
+            {isWebOs ? 'LG webOS pairing' : 'Automatic scan'}
+          </Text>
           <Text style={styles.infoText}>
-            We find your TV on Wi‑Fi by name — you don’t need to know the IP.
-            Tap Connect on a found device, then enter the code shown on the TV.
+            {isWebOs
+              ? 'We find your LG on Wi‑Fi. First connect shows an Accept prompt on the TV — press Yes, then Pair.'
+              : 'We find your TV on Wi‑Fi by name — you don’t need to know the IP. Tap Connect, then enter the code shown on the TV.'}
           </Text>
           <Text
             style={[
@@ -232,6 +304,16 @@ export function DeviceConnectionScreen({
               : backendOk
                 ? 'Backend online · ready to scan'
                 : 'Backend offline — start it to enable scanning'}
+          </Text>
+        </View>
+      ) : null}
+
+      {isAc ? (
+        <View style={styles.infoBox}>
+          <Text style={styles.infoTitle}>AC remote</Text>
+          <Text style={styles.infoText}>
+            Power, temp, mode, and fan work now. IR needs a blaster (Broadlink / ESP)
+            later; Wi‑Fi brands can plug into the same API.
           </Text>
         </View>
       ) : null}
@@ -272,11 +354,29 @@ export function DeviceConnectionScreen({
         <View style={styles.emptyScan}>
           <Ionicons name="wifi-outline" size={28} color={colors.textSecondary} />
           <Text style={styles.emptyScanText}>
-            {isAndroidTv
-              ? 'Make sure the TV is on and on the same Wi‑Fi as this PC, then tap Scan Again.'
-              : 'No devices found for this type yet.'}
+            {isAc
+              ? 'Choose IR or Wi‑Fi above, then connect your AC.'
+              : isLanTv
+                ? 'Make sure the TV is on and on the same Wi‑Fi as this PC, then tap Scan Again.'
+                : 'No devices found for this type yet.'}
           </Text>
         </View>
+      ) : null}
+
+      {isAc ? (
+        <Pressable
+          style={[styles.primaryBtn, { marginBottom: spacing.lg }]}
+          disabled={!!connectingId}
+          onPress={() =>
+            void connectTo({
+              name: `${brand.name} AC`,
+            })
+          }
+        >
+          <Text style={styles.primaryText}>
+            {connectingId ? 'Connecting…' : `Connect ${brand.name} AC`}
+          </Text>
+        </Pressable>
       ) : null}
 
       <View style={styles.list}>
@@ -334,28 +434,48 @@ export function DeviceConnectionScreen({
 
       {pairHost ? (
         <View style={styles.pairBox}>
-          <Text style={styles.pairTitle}>Pairing code</Text>
-          <Text style={styles.pairHint}>
-            {pairMessage || 'Look at your TV and enter the 6-digit code'}
-          </Text>
-          <TextInput
-            value={pairCode}
-            onChangeText={setPairCode}
-            placeholder="123456"
-            placeholderTextColor={colors.textSecondary}
-            style={styles.ipInput}
-            keyboardType="number-pad"
-            maxLength={6}
-          />
-          <Pressable
-            style={styles.primaryBtn}
-            disabled={!!connectingId || pairCode.trim().length < 4}
-            onPress={() => void submitPairCode()}
-          >
-            <Text style={styles.primaryText}>
-              {connectingId === 'pair' ? 'Pairing...' : 'Confirm Pairing'}
-            </Text>
-          </Pressable>
+          {pairKind === 'prompt' ? (
+            <>
+              <Text style={styles.pairTitle}>Allow on your LG TV</Text>
+              <Text style={styles.pairHint}>
+                {pairMessage || 'Press Yes / Allow on the TV, then tap below.'}
+              </Text>
+              <Pressable
+                style={styles.primaryBtn}
+                disabled={!!connectingId}
+                onPress={() => void submitWebOsPair()}
+              >
+                <Text style={styles.primaryText}>
+                  {connectingId === 'pair' ? 'Waiting for TV…' : 'Pair & Connect'}
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.pairTitle}>Pairing code</Text>
+              <Text style={styles.pairHint}>
+                {pairMessage || 'Look at your TV and enter the 6-digit code'}
+              </Text>
+              <TextInput
+                value={pairCode}
+                onChangeText={setPairCode}
+                placeholder="123456"
+                placeholderTextColor={colors.textSecondary}
+                style={styles.ipInput}
+                keyboardType="number-pad"
+                maxLength={6}
+              />
+              <Pressable
+                style={styles.primaryBtn}
+                disabled={!!connectingId || pairCode.trim().length < 4}
+                onPress={() => void submitPairCode()}
+              >
+                <Text style={styles.primaryText}>
+                  {connectingId === 'pair' ? 'Pairing...' : 'Confirm Pairing'}
+                </Text>
+              </Pressable>
+            </>
+          )}
         </View>
       ) : null}
 

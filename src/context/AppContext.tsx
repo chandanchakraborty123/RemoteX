@@ -123,9 +123,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setActiveDeviceState(active);
       setReady(true);
 
-      // One-tap style: auto-reconnect last/paired Android TVs in background
+      // One-tap style: auto-reconnect last/paired LAN devices in background
       const targets = normalized.filter(
-        (d) => d.paired && d.driver === 'androidtv' && d.ipAddress,
+        (d) =>
+          d.paired &&
+          ((d.driver === 'androidtv' && d.ipAddress) ||
+            (d.driver === 'webos' && d.ipAddress) ||
+            d.driver === 'ac' ||
+            d.type === 'ac'),
       );
       for (const device of targets.slice(0, 3)) {
         if (!mounted) break;
@@ -311,7 +316,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       if (device.status !== 'connected') {
-        if (!device.paired) {
+        const canAuto =
+          !!device.paired || device.type === 'ac' || device.driver === 'ac';
+        if (!canAuto) {
           setFeedback('Device disconnected');
           return;
         }
@@ -322,6 +329,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const result = await deviceService.sendCommand(device, action);
       setFeedback(result.message);
       if (result.ok) pushRecent(result.message);
+      if (result.ok && result.acState) {
+        setDevices((prev) => {
+          const next = prev.map((d) =>
+            d.id === device!.id ? { ...d, acState: result.acState, status: 'connected' as const } : d,
+          );
+          void storageService.saveDevices(next);
+          return next;
+        });
+        setActiveDeviceState((current) =>
+          current?.id === device!.id
+            ? { ...current, acState: result.acState, status: 'connected' }
+            : current,
+        );
+      }
       if (!result.ok && /disconnect|connection lost|not connected/i.test(result.message)) {
         setDevices((prev) => {
           const next = prev.map((d) =>

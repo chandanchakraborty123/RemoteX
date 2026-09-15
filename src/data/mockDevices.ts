@@ -9,8 +9,9 @@ export const MOCK_DEVICES: Device[] = [
     platform: 'webOS',
     connectionType: 'wifi',
     ipAddress: '192.168.1.42',
-    status: 'connected',
+    status: 'disconnected',
     favorite: true,
+    driver: 'webos',
   },
   {
     id: 'dev-samsung-1',
@@ -22,6 +23,7 @@ export const MOCK_DEVICES: Device[] = [
     ipAddress: '192.168.1.55',
     status: 'disconnected',
     favorite: true,
+    driver: 'mock',
   },
   {
     id: 'dev-android-1',
@@ -43,6 +45,7 @@ export const MOCK_DEVICES: Device[] = [
     connectionType: 'wifi',
     ipAddress: '192.168.1.70',
     status: 'disconnected',
+    driver: 'androidtv',
   },
   {
     id: 'dev-ac-1',
@@ -52,6 +55,8 @@ export const MOCK_DEVICES: Device[] = [
     platform: 'IR / Wi-Fi',
     connectionType: 'ir',
     status: 'disconnected',
+    driver: 'ac',
+    acState: { power: false, temp: 24, mode: 'cool', fan: 'auto', transport: 'ir' },
   },
   {
     id: 'dev-speaker-1',
@@ -61,6 +66,7 @@ export const MOCK_DEVICES: Device[] = [
     platform: 'Bluetooth / Wi-Fi',
     connectionType: 'bluetooth',
     status: 'disconnected',
+    driver: 'mock',
   },
 ];
 

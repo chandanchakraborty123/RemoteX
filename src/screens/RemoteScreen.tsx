@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheet } from '../components/BottomSheet';
+import { AcRemotePanel } from '../components/AcRemotePanel';
 import { AppShortcutIcon } from '../components/AppShortcutIcon';
 import { TouchPad } from '../components/TouchPad';
 import { useApp } from '../context/AppContext';
@@ -19,7 +20,7 @@ import { DEFAULT_APP_SHORTCUTS } from '../data/mockDevices';
 import type { RootStackParamList } from '../navigation/types';
 import { deviceService } from '../services/deviceService';
 import { colors } from '../theme';
-import type { RemoteActionType } from '../types';
+import type { AcDeviceState, RemoteActionType } from '../types';
 
 type PadPosition = 'top' | 'center' | 'bottom';
 
@@ -209,6 +210,15 @@ export function RemoteScreen() {
     );
   }
 
+  const isAc = activeDevice.type === 'ac' || activeDevice.driver === 'ac';
+  const acState: AcDeviceState = activeDevice.acState ?? {
+    power: false,
+    temp: 24,
+    mode: 'cool',
+    fan: 'auto',
+    transport: activeDevice.connectionType === 'wifi' ? 'wifi' : 'ir',
+  };
+
   return (
     <View style={[styles.root, { paddingTop: insets.top + 4 }]}>
       <LinearGradient colors={['#151B2C', colors.background]} style={StyleSheet.absoluteFill} />
@@ -286,6 +296,37 @@ export function RemoteScreen() {
         contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 24 }]}
         showsVerticalScrollIndicator={false}
       >
+        {isAc ? (
+          <>
+            <AcRemotePanel
+              state={acState}
+              transportLabel={
+                (acState.transport || activeDevice.connectionType) === 'wifi'
+                  ? 'Wi‑Fi'
+                  : 'IR'
+              }
+              onAction={(type, payload) => fire(type, payload)}
+            />
+            <View style={[styles.tools, { marginTop: 16 }]}>
+              {[
+                {
+                  label: activeDevice.status === 'connected' ? 'Disconnect' : 'Reconnect',
+                  icon: (activeDevice.status === 'connected' ? 'unlink' : 'refresh') as keyof typeof Ionicons.glyphMap,
+                  onPress: () =>
+                    activeDevice.status === 'connected'
+                      ? void disconnectDevice(activeDevice.id)
+                      : void reconnect(),
+                },
+              ].map((t) => (
+                <Pressable key={t.label} style={styles.tool} onPress={t.onPress}>
+                  <Ionicons name={t.icon} size={16} color={colors.primary} />
+                  <Text style={styles.toolText}>{t.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        ) : (
+          <>
         {/* Row 1 — equal 3 columns */}
         <View style={styles.grid3}>
           <View style={styles.cell}>
@@ -396,6 +437,8 @@ export function RemoteScreen() {
             ))}
           </View>
         ) : null}
+          </>
+        )}
       </ScrollView>
 
       <BottomSheet visible={aiOpen} title="AI help" onClose={() => setAiOpen(false)}>

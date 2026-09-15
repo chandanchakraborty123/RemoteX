@@ -49,3 +49,5 @@ __pycache__/
 venv/
 backend/data/certs/**
 !backend/data/certs/.gitkeep
+backend/data/webos/**
+!backend/data/webos/.gitkeep

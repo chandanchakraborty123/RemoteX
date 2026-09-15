@@ -16,7 +16,7 @@ import { deviceService, type DiscoveredDevice } from '../services/deviceService'
 import { colors, spacing, typography } from '../theme';
 
 /**
- * One-tap Wi‑Fi scan for Android TV / Google TV / Xstream devices.
+ * One-tap Wi‑Fi scan for Android TV / Google TV / Xstream / LG webOS.
  * Used from Home and Devices — no IP knowledge required.
  */
 export function ScanScreen({ navigation }: RootStackProps<'Scan'>) {
@@ -30,8 +30,11 @@ export function ScanScreen({ navigation }: RootStackProps<'Scan'>) {
   const [pairName, setPairName] = useState('');
   const [pairCode, setPairCode] = useState('');
   const [pairMessage, setPairMessage] = useState<string | null>(null);
+  const [pairKind, setPairKind] = useState<'code' | 'prompt'>('code');
+  const [pairDriver, setPairDriver] = useState<'androidtv' | 'webos'>('androidtv');
   const [showManual, setShowManual] = useState(false);
   const [manualIp, setManualIp] = useState('');
+  const [manualKind, setManualKind] = useState<'androidtv' | 'webos'>('androidtv');
 
   const scan = useCallback(async () => {
     setScanning(true);
@@ -48,21 +51,30 @@ export function ScanScreen({ navigation }: RootStackProps<'Scan'>) {
     void scan();
   }, [scan]);
 
-  const connectTo = async (item: DiscoveredDevice | { name: string; ipAddress: string }) => {
+  const connectTo = async (
+    item: DiscoveredDevice | { name: string; ipAddress: string; driver?: 'androidtv' | 'webos' },
+  ) => {
     const host = item.ipAddress;
-    setConnectingId('id' in item && 'brand' in item ? item.id : 'manual');
+    const driver: 'androidtv' | 'webos' =
+      'driver' in item && item.driver === 'webos' ? 'webos' : 'androidtv';
+    setConnectingId('id' in item ? item.id : 'manual');
     setError(null);
     setPairHost(null);
 
     const result = await deviceService.connect({
       name: item.name,
-      brand: 'brand' in item ? item.brand : 'Android TV',
-      platform: 'platform' in item ? item.platform : 'Android TV / Google TV',
+      brand: 'brand' in item ? item.brand : driver === 'webos' ? 'LG' : 'Android TV',
+      platform:
+        'platform' in item
+          ? item.platform
+          : driver === 'webos'
+            ? 'webOS'
+            : 'Android TV / Google TV',
       type: 'tv',
       connectionType: 'local_network',
       ipAddress: host,
       status: 'connecting',
-      driver: 'androidtv',
+      driver,
     });
 
     setConnectingId(null);
@@ -77,6 +89,13 @@ export function ScanScreen({ navigation }: RootStackProps<'Scan'>) {
       setPairHost(result.host);
       setPairName(item.name);
       setPairMessage(result.message);
+      setPairKind(result.pairKind ?? (driver === 'webos' ? 'prompt' : 'code'));
+      setPairDriver(driver === 'webos' ? 'webos' : 'androidtv');
+
+      if (driver === 'webos' || result.pairKind === 'prompt') {
+        return;
+      }
+
       try {
         const start = await deviceService.startAndroidTvPairing(result.host);
         if (!start.ok) {
@@ -91,6 +110,45 @@ export function ScanScreen({ navigation }: RootStackProps<'Scan'>) {
     }
 
     setError(result.message);
+  };
+
+  const submitWebOsPair = async () => {
+    if (!pairHost) return;
+    setConnectingId('pair');
+    setError(null);
+    setPairMessage('Waiting for Accept on your LG TV…');
+    try {
+      const finished = await deviceService.pairWebOs(pairHost);
+      if (!finished.ok) {
+        setError(finished.error || 'Pairing timed out — try again on the TV');
+        setConnectingId(null);
+        return;
+      }
+      const connected = await deviceService.connect({
+        name: finished.name || pairName || 'LG webOS TV',
+        brand: 'LG',
+        platform: 'webOS',
+        type: 'tv',
+        connectionType: 'local_network',
+        ipAddress: pairHost,
+        status: 'connecting',
+        driver: 'webos',
+      });
+      setConnectingId(null);
+      if (connected.status === 'connected') {
+        await upsertDevice(connected.device);
+        navigation.replace('Remote');
+        return;
+      }
+      setError(
+        connected.status === 'error'
+          ? connected.message
+          : 'Paired, but connection failed — try again',
+      );
+    } catch (e) {
+      setConnectingId(null);
+      setError(e instanceof Error ? e.message : 'webOS pairing failed');
+    }
   };
 
   const submitPairCode = async () => {
@@ -140,7 +198,7 @@ export function ScanScreen({ navigation }: RootStackProps<'Scan'>) {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Scan for devices</Text>
       <Text style={styles.subtitle}>
-        We search your Wi‑Fi for TVs and boxes. You don’t need to know the IP address.
+        We search your Wi‑Fi for Android TV, Xstream, and LG webOS. You don’t need the IP.
       </Text>
 
       <View style={styles.scanCard}>
@@ -170,7 +228,7 @@ export function ScanScreen({ navigation }: RootStackProps<'Scan'>) {
           <View key={device.id} style={styles.deviceRow}>
             <DeviceCard
               title={device.name}
-              subtitle={`${device.brand} · ${device.ipAddress}`}
+              subtitle={`${device.brand} · ${device.platform} · ${device.ipAddress}`}
               status={connectingId === device.id ? 'connecting' : 'disconnected'}
             />
             <Pressable
@@ -188,34 +246,71 @@ export function ScanScreen({ navigation }: RootStackProps<'Scan'>) {
 
       {pairHost ? (
         <View style={styles.pairBox}>
-          <Text style={styles.pairTitle}>Pairing code</Text>
-          <Text style={styles.pairHint}>
-            {pairMessage || `Look at ${pairName || 'your TV'} and enter the 6-digit code`}
-          </Text>
-          <TextInput
-            value={pairCode}
-            onChangeText={setPairCode}
-            placeholder="123456"
-            placeholderTextColor={colors.textSecondary}
-            style={styles.ipInput}
-            keyboardType="number-pad"
-            maxLength={6}
-          />
-          <Pressable
-            style={styles.primaryBtn}
-            disabled={!!connectingId || pairCode.trim().length < 4}
-            onPress={() => void submitPairCode()}
-          >
-            <Text style={styles.primaryText}>
-              {connectingId === 'pair' ? 'Pairing...' : 'Confirm Pairing'}
-            </Text>
-          </Pressable>
+          {pairKind === 'prompt' || pairDriver === 'webos' ? (
+            <>
+              <Text style={styles.pairTitle}>Allow on your LG TV</Text>
+              <Text style={styles.pairHint}>
+                {pairMessage ||
+                  `A prompt should appear on ${pairName || 'your TV'}. Press Yes / Allow, then tap below.`}
+              </Text>
+              <Pressable
+                style={styles.primaryBtn}
+                disabled={!!connectingId}
+                onPress={() => void submitWebOsPair()}
+              >
+                <Text style={styles.primaryText}>
+                  {connectingId === 'pair' ? 'Waiting for TV…' : 'Pair & Connect'}
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.pairTitle}>Pairing code</Text>
+              <Text style={styles.pairHint}>
+                {pairMessage || `Look at ${pairName || 'your TV'} and enter the 6-digit code`}
+              </Text>
+              <TextInput
+                value={pairCode}
+                onChangeText={setPairCode}
+                placeholder="123456"
+                placeholderTextColor={colors.textSecondary}
+                style={styles.ipInput}
+                keyboardType="number-pad"
+                maxLength={6}
+              />
+              <Pressable
+                style={styles.primaryBtn}
+                disabled={!!connectingId || pairCode.trim().length < 4}
+                onPress={() => void submitPairCode()}
+              >
+                <Text style={styles.primaryText}>
+                  {connectingId === 'pair' ? 'Pairing...' : 'Confirm Pairing'}
+                </Text>
+              </Pressable>
+            </>
+          )}
         </View>
       ) : null}
 
       {showManual ? (
         <View style={styles.manualBox}>
           <Text style={styles.manualLabel}>Or enter IP (advanced)</Text>
+          <View style={styles.kindRow}>
+            {([
+              { id: 'androidtv' as const, label: 'Android / Xstream' },
+              { id: 'webos' as const, label: 'LG webOS' },
+            ]).map((k) => (
+              <Pressable
+                key={k.id}
+                style={[styles.kindChip, manualKind === k.id && styles.kindChipOn]}
+                onPress={() => setManualKind(k.id)}
+              >
+                <Text style={[styles.kindText, manualKind === k.id && styles.kindTextOn]}>
+                  {k.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
           <TextInput
             value={manualIp}
             onChangeText={setManualIp}
@@ -229,8 +324,9 @@ export function ScanScreen({ navigation }: RootStackProps<'Scan'>) {
             disabled={!manualIp.trim() || !!connectingId}
             onPress={() =>
               void connectTo({
-                name: 'Android TV',
+                name: manualKind === 'webos' ? 'LG webOS TV' : 'Android TV',
                 ipAddress: manualIp.trim(),
+                driver: manualKind,
               })
             }
           >
@@ -317,6 +413,19 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   manualLabel: { color: colors.textSecondary, fontWeight: '600', fontSize: 12 },
+  kindRow: { flexDirection: 'row', gap: 8 },
+  kindChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    backgroundColor: colors.secondaryBackground,
+  },
+  kindChipOn: { borderColor: colors.primary, backgroundColor: 'rgba(88,101,242,0.15)' },
+  kindText: { color: colors.textSecondary, fontWeight: '700', fontSize: 12 },
+  kindTextOn: { color: colors.primary },
   ipInput: {
     height: 48,
     borderRadius: 12,

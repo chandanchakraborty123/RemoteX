@@ -1,8 +1,9 @@
 """
 RemoteX FastAPI backend.
 
-Android TV / Google TV remote control is handled via androidtvremote2
-(same protocol as the Google TV mobile app).
+- Android TV / Google TV via androidtvremote2
+- LG webOS via aiowebostv
+- AC IR / Wi‑Fi bridge stub (stateful; ready for Broadlink / brand APIs)
 """
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -10,9 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Any
 
+from routes.ac import router as ac_router
 from routes.androidtv import router as androidtv_router
+from routes.webos import router as webos_router
 
-app = FastAPI(title="RemoteX API", version="0.2.0")
+app = FastAPI(title="RemoteX API", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +26,8 @@ app.add_middleware(
 )
 
 app.include_router(androidtv_router)
+app.include_router(webos_router)
+app.include_router(ac_router)
 
 
 class DeviceIn(BaseModel):
@@ -46,7 +51,13 @@ DEVICES: dict[str, dict[str, Any]] = {}
 
 @app.get("/health")
 def health():
-    return {"ok": True, "service": "remotex-api", "androidtv": True}
+    return {
+        "ok": True,
+        "service": "remotex-api",
+        "androidtv": True,
+        "webos": True,
+        "ac": True,
+    }
 
 
 @app.get("/devices")

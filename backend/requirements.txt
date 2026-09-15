@@ -3,3 +3,4 @@ uvicorn[standard]>=0.30.0
 pydantic>=2.0.0
 androidtvremote2>=0.1.1
 zeroconf>=0.131.0
+aiowebostv>=0.4.2
