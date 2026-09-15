@@ -176,6 +176,87 @@ Emulator default is usually fine without changes.
 
 ---
 
+## Install as a real app on your phone (Android APK)
+
+Use this when you want RemoteX as an **installed app** (not just the browser).
+
+> The **backend must still run on your PC** while you use the phone. The app talks to `http://YOUR_PC_IP:8000`.
+
+### A) Fastest test — Expo Go (no APK build)
+
+1. Install **Expo Go** from Play Store / App Store  
+2. On PC:
+
+```bash
+npm run backend
+npm start
+```
+
+3. Scan the QR code with Expo Go  
+4. In the app → **Settings** → set PC helper URL to:
+
+```text
+http://YOUR_PC_IP:8000
+```
+
+### B) Build an installable Android APK (recommended)
+
+One-time:
+
+```bash
+npm install
+npx eas login
+npx eas build:configure
+```
+
+Build the APK (cloud — Expo servers):
+
+```bash
+npm run build:android
+```
+
+Same as:
+
+```bash
+npx eas build -p android --profile preview
+```
+
+When the build finishes:
+
+1. Open the link EAS prints (or check [expo.dev](https://expo.dev) → your project → Builds)  
+2. Download the **.apk** on your phone  
+3. Install it (allow “Install unknown apps” if Android asks)  
+4. Start the PC backend: `npm run backend`  
+5. Open RemoteX → **Settings** → PC helper:
+
+```text
+http://YOUR_PC_IP:8000
+```
+
+6. Tap **Test** — should say **Connected**
+
+### Other build commands
+
+```bash
+# Android APK for phone install (preview)
+npm run build:android
+
+# Android App Bundle for Google Play
+npm run build:android:prod
+
+# iOS (needs Apple Developer account)
+npm run build:ios
+```
+
+### Optional — build APK on this PC (needs Android Studio)
+
+```bash
+npx expo prebuild -p android
+npx expo run:android --variant release
+```
+
+---
+
 ## Common problems
 
 | Problem | Fix |
@@ -186,6 +267,8 @@ Emulator default is usually fine without changes.
 | `Port 8000` busy | Stop the other backend, or change the port in `npm run backend` / Settings |
 | `ModuleNotFoundError` (Python) | Run `pip install -r backend/requirements.txt` again |
 | Pairing fails | TV awake, “Allow remote” / pairing prompts enabled; retry Scan |
+| APK can’t reach TVs | Backend running on PC? Settings URL = `http://PC_IP:8000`? Same Wi‑Fi? |
+| `eas login` / build fails | Create a free account at expo.dev, then `eas login` again |
 
 ---
 
@@ -199,6 +282,11 @@ cd backend && pip install -r requirements.txt && cd ..
 # Run (every day) — two terminals
 npm run backend
 npm run web
+
+# Mobile app (Android APK)
+npx eas login
+npx eas build:configure
+npm run build:android
 
 # Or from backend folder manually
 cd backend

@@ -11,6 +11,8 @@ interface DeviceCardProps {
   status?: ConnectionStatus;
   /** Saved pairing — can reconnect without a new code */
   paired?: boolean;
+  /** False = control not shipped yet (show Coming soon instead of Offline) */
+  ready?: boolean;
   onPress?: () => void;
   selected?: boolean;
 }
@@ -21,11 +23,15 @@ export function DeviceCard({
   icon = 'tv-outline',
   status,
   paired,
+  ready = true,
   onPress,
   selected,
 }: DeviceCardProps) {
-  const statusColor =
-    status === 'connected'
+  const comingSoon = !ready;
+
+  const statusColor = comingSoon
+    ? colors.warning
+    : status === 'connected'
       ? colors.success
       : status === 'connecting'
         ? colors.warning
@@ -33,8 +39,9 @@ export function DeviceCard({
           ? colors.primary
           : colors.textSecondary;
 
-  const statusLabel =
-    status === 'connected'
+  const statusLabel = comingSoon
+    ? 'Coming soon'
+    : status === 'connected'
       ? 'Connected'
       : status === 'connecting'
         ? 'Connecting'
@@ -48,11 +55,16 @@ export function DeviceCard({
       style={({ pressed }) => [
         styles.card,
         selected && styles.selected,
+        comingSoon && styles.comingSoonCard,
         pressed && { opacity: 0.88 },
       ]}
     >
-      <View style={styles.iconWrap}>
-        <Ionicons name={icon} size={22} color={colors.primary} />
+      <View style={[styles.iconWrap, comingSoon && styles.iconWrapMuted]}>
+        <Ionicons
+          name={icon}
+          size={22}
+          color={comingSoon ? colors.textSecondary : colors.primary}
+        />
       </View>
       <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>
@@ -81,6 +93,9 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
   },
+  comingSoonCard: {
+    opacity: 0.92,
+  },
   selected: {
     borderColor: colors.primary,
     backgroundColor: 'rgba(88,101,242,0.12)',
@@ -93,10 +108,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconWrapMuted: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
   content: { flex: 1 },
   title: { ...typography.body, color: colors.text, fontWeight: '600' },
   subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  statusWrap: { alignItems: 'flex-end', gap: 4 },
+  statusWrap: { alignItems: 'flex-end', gap: 4, maxWidth: 96 },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  status: { ...typography.caption },
+  status: { ...typography.caption, textAlign: 'right' },
 });

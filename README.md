@@ -23,6 +23,13 @@ npm run web        # App  → http://localhost:8081
 On your phone (same Wi‑Fi): `http://YOUR_PC_IP:8081`  
 API auto-points to `http://YOUR_PC_IP:8000`.
 
+**Install as Android app (APK):** see [SETUP.md → Install as a real app](./SETUP.md#install-as-a-real-app-on-your-phone-android-apk)
+
+```bash
+npx eas login
+npm run build:android
+```
+
 ---
 
 ## Features (current)

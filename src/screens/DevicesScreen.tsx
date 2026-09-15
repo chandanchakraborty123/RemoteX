@@ -8,6 +8,8 @@ import { DeviceCard } from '../components/DeviceCard';
 import { useApp } from '../context/AppContext';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, spacing, typography } from '../theme';
+import { isDeviceControlReady } from '../utils/deviceDrivers';
+import { iconForDeviceType } from '../utils/deviceIcons';
 
 export function DevicesScreen() {
   const insets = useSafeAreaInsets();
@@ -18,15 +20,25 @@ export function DevicesScreen() {
     disconnectDevice,
     disconnectAllDevices,
     reconnectDevice,
+    setFeedback,
     recent,
   } = useApp();
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const connectedCount = devices.filter((d) => d.status === 'connected').length;
+  const connectedCount = devices.filter(
+    (d) => d.status === 'connected' && isDeviceControlReady(d),
+  ).length;
 
   const openDevice = async (id: string) => {
     const device = devices.find((d) => d.id === id);
     if (!device) return;
+
+    if (!isDeviceControlReady(device)) {
+      setFeedback(`${device.name} — coming soon`);
+      await setActiveDevice(device);
+      return;
+    }
+
     setBusyId(id);
     if (device.status !== 'connected' && device.paired) {
       const ok = await reconnectDevice(id);
@@ -104,18 +116,22 @@ export function DevicesScreen() {
       </Pressable>
 
       <View style={styles.list}>
-        {devices.map((device) => (
+        {devices.map((device) => {
+          const ready = isDeviceControlReady(device);
+          return (
           <View key={device.id} style={styles.deviceBlock}>
             <DeviceCard
               title={device.name}
               subtitle={`${device.brand} · ${device.platform}${device.ipAddress ? ` · ${device.ipAddress}` : ''}${
-                device.paired && device.status !== 'connected' ? ' · Paired' : ''
+                ready && device.paired && device.status !== 'connected' ? ' · Paired' : ''
               }`}
+              icon={iconForDeviceType(device.type)}
               status={device.status}
-              paired={device.paired}
+              paired={ready ? device.paired : false}
+              ready={ready}
               onPress={() => void openDevice(device.id)}
             />
-            {device.status === 'connected' ? (
+            {ready && device.status === 'connected' ? (
               <Pressable
                 style={styles.disconnectBtn}
                 disabled={!!busyId}
@@ -130,7 +146,7 @@ export function DevicesScreen() {
                   </>
                 )}
               </Pressable>
-            ) : device.paired ? (
+            ) : ready && device.paired ? (
               <Pressable
                 style={styles.reconnectBtn}
                 disabled={!!busyId}
@@ -147,7 +163,8 @@ export function DevicesScreen() {
               </Pressable>
             ) : null}
           </View>
-        ))}
+          );
+        })}
       </View>
 
       <Text style={styles.section}>Recent actions</Text>

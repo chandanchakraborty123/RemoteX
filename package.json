@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eas-cli": "^24.6.0",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -32,7 +33,12 @@
     "android": "expo start --android --lan",
     "ios": "expo start --ios --lan",
     "web": "expo start --web --lan --port 8081",
-    "backend": "cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000"
+    "backend": "cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "build:android": "eas build -p android --profile preview",
+    "build:android:prod": "eas build -p android --profile production",
+    "build:ios": "eas build -p ios --profile preview",
+    "eas:login": "eas login",
+    "eas:configure": "eas build:configure"
   },
   "private": true
 }

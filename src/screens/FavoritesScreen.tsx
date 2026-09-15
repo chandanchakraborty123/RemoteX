@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../context/AppContext';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, spacing, typography } from '../theme';
+import { iconForDeviceType } from '../utils/deviceIcons';
 
 export function FavoritesScreen() {
   const insets = useSafeAreaInsets();
@@ -73,9 +74,13 @@ export function FavoritesScreen() {
           >
             <View style={styles.icon}>
               <Ionicons
-                name={item.kind === 'macro' ? 'flash-outline' : 'star'}
+                name={
+                  item.kind === 'macro'
+                    ? 'flash-outline'
+                    : iconForDeviceType(devices.find((d) => d.id === item.refId)?.type)
+                }
                 size={18}
-                color={colors.warning}
+                color={item.kind === 'macro' ? colors.warning : colors.primary}
               />
             </View>
             <View style={{ flex: 1 }}>

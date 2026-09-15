@@ -123,14 +123,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setActiveDeviceState(active);
       setReady(true);
 
-      // One-tap style: auto-reconnect last/paired LAN devices in background
+      // One-tap: auto-reconnect ready LAN devices (Android TV / LG webOS)
       const targets = normalized.filter(
         (d) =>
           d.paired &&
           ((d.driver === 'androidtv' && d.ipAddress) ||
-            (d.driver === 'webos' && d.ipAddress) ||
-            d.driver === 'ac' ||
-            d.type === 'ac'),
+            (d.driver === 'webos' && d.ipAddress)),
       );
       for (const device of targets.slice(0, 3)) {
         if (!mounted) break;

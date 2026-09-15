@@ -45,3 +45,17 @@ export function usesAcDriver(device: {
   if (device.driver === 'ac') return true;
   return device.type === 'ac';
 }
+
+/** Real control is wired and usable on a phone (not placeholder / stub-only). */
+export function isDeviceControlReady(device: {
+  driver?: string;
+  type?: string;
+  platform?: string;
+  brand?: string;
+} | null): boolean {
+  if (!device) return false;
+  if (device.driver === 'mock') return false;
+  // AC UI exists, but real IR / Wi‑Fi blast is not ready yet
+  if (device.type === 'ac' || device.driver === 'ac') return false;
+  return usesAndroidTvDriver(device) || usesWebOsDriver(device);
+}

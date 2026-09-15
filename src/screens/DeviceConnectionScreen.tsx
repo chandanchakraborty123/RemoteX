@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { DeviceCard } from '../components/DeviceCard';
+import { BottomSheet } from '../components/BottomSheet';
 import { useApp } from '../context/AppContext';
 import type { RootStackProps } from '../navigation/types';
 import {
@@ -17,7 +18,7 @@ import {
   type DiscoveredDevice,
 } from '../services/deviceService';
 import { colors, spacing, typography } from '../theme';
-import type { ConnectionMethod } from '../types';
+import type { ConnectionMethod, DeviceCategory } from '../types';
 import { isAndroidTvPlatform, isWebOsPlatform } from '../utils/deviceDrivers';
 
 const METHOD_LABELS: Record<ConnectionMethod, string> = {
@@ -29,6 +30,67 @@ const METHOD_LABELS: Record<ConnectionMethod, string> = {
   qr_code: 'QR Code',
   pairing_code: 'Pairing Code',
 };
+
+function helpTips(opts: {
+  brandName: string;
+  platform: string;
+  deviceType: DeviceCategory;
+  isAndroidTv: boolean;
+  isWebOs: boolean;
+  isAc: boolean;
+}): string[] {
+  const common = [
+    'Phone and TV/AC must be on the same Wi‑Fi as this PC.',
+    'Keep the device awake (not in deep sleep) while connecting.',
+  ];
+
+  if (opts.isAc) {
+    return [
+      'AC remote control is coming soon.',
+      'You can add your AC to My Devices now so it’s ready later.',
+      'Real IR needs a blaster; Wi‑Fi brands will plug in when we add them.',
+      'Samsung TVs and speakers are also marked Coming soon for now.',
+    ];
+  }
+
+  if (opts.isWebOs) {
+    return [
+      ...common,
+      'Turn the LG TV on, then tap Scan Again.',
+      'When you connect, a prompt appears on the TV — press Yes / Allow.',
+      'Then tap Pair & Connect in the app.',
+      'If nothing is listed, use Enter IP manually (TV Settings → Network).',
+    ];
+  }
+
+  if (opts.isAndroidTv) {
+    return [
+      ...common,
+      'Turn the TV / box on, then tap Scan Again.',
+      'Tap Connect on your device.',
+      'A 6-digit code appears on the TV — type it here.',
+      'Next time you can reconnect without a new code.',
+      'If scan finds nothing, use Enter IP manually.',
+    ];
+  }
+
+  // Samsung / other brands — honest but friendly
+  if (opts.platform.toLowerCase().includes('tizen') || opts.brandName.toLowerCase() === 'samsung') {
+    return [
+      ...common,
+      'Samsung support is limited for now — you can still add the TV to try the UI.',
+      'Make sure Smart Hub / remote access is enabled on the TV.',
+      'Try Wi‑Fi or Manual IP, then Connect.',
+      'Full Samsung control is coming in a later update.',
+    ];
+  }
+
+  return [
+    ...common,
+    `Add your ${opts.brandName} device, then open the remote.`,
+    'If scan finds nothing, try Enter IP manually or Scan Again.',
+  ];
+}
 
 export function DeviceConnectionScreen({
   navigation,
@@ -57,8 +119,18 @@ export function DeviceConnectionScreen({
   const [pairMessage, setPairMessage] = useState<string | null>(null);
   const [pairKind, setPairKind] = useState<'code' | 'prompt'>('code');
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+
+  const tips = helpTips({
+    brandName: brand.name,
+    platform: brand.platform,
+    deviceType,
+    isAndroidTv,
+    isWebOs,
+    isAc,
+  });
 
   const scan = useCallback(async () => {
     setScanning(true);
@@ -312,8 +384,8 @@ export function DeviceConnectionScreen({
         <View style={styles.infoBox}>
           <Text style={styles.infoTitle}>Air conditioner</Text>
           <Text style={styles.infoText}>
-            Set power, temperature, mode, and fan from your phone. Pick IR or Wi‑Fi
-            below, then connect.
+            AC control is coming soon. You can add the device to your list now;
+            Power, Temp, Mode, and Fan will work once IR / Wi‑Fi is ready.
           </Text>
         </View>
       ) : null}
@@ -355,7 +427,7 @@ export function DeviceConnectionScreen({
           <Ionicons name="wifi-outline" size={28} color={colors.textSecondary} />
           <Text style={styles.emptyScanText}>
             {isAc
-              ? 'Choose IR or Wi‑Fi above, then connect your AC.'
+              ? 'AC control is coming soon — you can still add it to your list.'
               : isLanTv
                 ? 'Make sure the TV is on and on the same Wi‑Fi as this PC, then tap Scan Again.'
                 : 'No devices found for this type yet.'}
@@ -367,14 +439,32 @@ export function DeviceConnectionScreen({
         <Pressable
           style={[styles.primaryBtn, { marginBottom: spacing.lg }]}
           disabled={!!connectingId}
-          onPress={() =>
-            void connectTo({
+          onPress={async () => {
+            setConnectingId('ac');
+            await upsertDevice({
+              id: `ac-${brand.id}-${Date.now()}`,
               name: `${brand.name} AC`,
-            })
-          }
+              type: 'ac',
+              brand: brand.name,
+              platform: brand.platform,
+              connectionType: selectedMethod === 'wifi' ? 'wifi' : 'ir',
+              status: 'disconnected',
+              driver: 'ac',
+              paired: false,
+              acState: {
+                power: false,
+                temp: 24,
+                mode: 'cool',
+                fan: 'auto',
+                transport: selectedMethod === 'wifi' ? 'wifi' : 'ir',
+              },
+            });
+            setConnectingId(null);
+            navigation.navigate('MainTabs', { screen: 'Devices' } as never);
+          }}
         >
           <Text style={styles.primaryText}>
-            {connectingId ? 'Connecting…' : `Connect ${brand.name} AC`}
+            {connectingId === 'ac' ? 'Adding…' : `Add ${brand.name} AC`}
           </Text>
         </Pressable>
       ) : null}
@@ -488,8 +578,25 @@ export function DeviceConnectionScreen({
           onPress={() => setShowManual((v) => !v)}
         />
         <ActionLink icon="refresh-outline" label="Scan Again" onPress={() => void scan()} />
-        <ActionLink icon="help-circle-outline" label="Help" onPress={() => {}} />
+        <ActionLink icon="help-circle-outline" label="Help" onPress={() => setHelpOpen(true)} />
       </View>
+
+      <BottomSheet visible={helpOpen} title="How to connect" onClose={() => setHelpOpen(false)}>
+        <Text style={styles.helpBrand}>
+          {brand.name} · {brand.platform}
+        </Text>
+        {tips.map((tip, index) => (
+          <View key={tip} style={styles.helpRow}>
+            <View style={styles.helpNumWrap}>
+              <Text style={styles.helpNum}>{index + 1}</Text>
+            </View>
+            <Text style={styles.helpText}>{tip}</Text>
+          </View>
+        ))}
+        <Pressable style={styles.helpDone} onPress={() => setHelpOpen(false)}>
+          <Text style={styles.primaryText}>Got it</Text>
+        </Pressable>
+      </BottomSheet>
     </ScrollView>
   );
 }
@@ -635,5 +742,44 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     color: colors.danger,
     lineHeight: 20,
+  },
+  helpBrand: {
+    color: colors.textSecondary,
+    marginTop: -8,
+    marginBottom: spacing.lg,
+    fontWeight: '600',
+  },
+  helpRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+    alignItems: 'flex-start',
+  },
+  helpNumWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(88,101,242,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  helpNum: {
+    color: colors.primary,
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  helpText: {
+    flex: 1,
+    color: colors.text,
+    lineHeight: 22,
+  },
+  helpDone: {
+    marginTop: spacing.md,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
