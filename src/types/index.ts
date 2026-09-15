@@ -86,6 +86,9 @@ export interface Device {
   favorite?: boolean;
   /** Protocol driver used for this device */
   driver?: DeviceDriver;
+  /** Successfully paired at least once (certs saved on backend) */
+  paired?: boolean;
+  lastConnectedAt?: number;
 }
 
 export interface RemoteAction {

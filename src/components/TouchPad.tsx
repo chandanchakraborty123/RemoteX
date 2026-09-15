@@ -24,6 +24,7 @@ export function TouchPad({ onAction, onTap }: TouchPadProps) {
   };
 
   const pan = Gesture.Pan()
+    .minDistance(18)
     .onBegin((e) => {
       startX.value = e.x;
       startY.value = e.y;
@@ -35,7 +36,6 @@ export function TouchPad({ onAction, onTap }: TouchPadProps) {
       const absY = Math.abs(dy);
 
       if (absX < 24 && absY < 24) {
-        runOnJS(emitTap)();
         return;
       }
 
@@ -46,9 +46,11 @@ export function TouchPad({ onAction, onTap }: TouchPadProps) {
       }
     });
 
-  const longPress = Gesture.LongPress().onStart(() => {
-    runOnJS(emit)('MENU');
-  });
+  const singleTap = Gesture.Tap()
+    .maxDuration(250)
+    .onEnd(() => {
+      runOnJS(emitTap)();
+    });
 
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
@@ -56,14 +58,21 @@ export function TouchPad({ onAction, onTap }: TouchPadProps) {
       runOnJS(emit)('HOME');
     });
 
-  const composed = Gesture.Exclusive(doubleTap, longPress, pan);
+  // Long-press (~450ms) opens Menu — like holding OK/options on many remotes
+  const longPress = Gesture.LongPress()
+    .minDuration(450)
+    .onStart(() => {
+      runOnJS(emit)('MENU');
+    });
+
+  const composed = Gesture.Exclusive(doubleTap, longPress, singleTap, pan);
 
   return (
     <GestureDetector gesture={composed}>
       <View style={styles.pad}>
         <View style={styles.ring} />
-        <Text style={styles.hint}>Swipe to navigate</Text>
-        <Text style={styles.subHint}>Tap · OK  ·  Double-tap · Home</Text>
+        <Text style={styles.hint}>Swipe to move</Text>
+        <Text style={styles.subHint}>Tap OK · Hold Menu · Double-tap Home</Text>
       </View>
     </GestureDetector>
   );

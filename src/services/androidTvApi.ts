@@ -11,6 +11,7 @@ export interface AndroidTvResult {
   is_on?: boolean;
   current_app?: string | null;
   connected?: boolean;
+  paired?: boolean;
   device?: AndroidTvResult;
 }
 
@@ -38,6 +39,13 @@ export const androidTvApi = {
 
   connect(host: string) {
     return apiRequest<AndroidTvResult>('/androidtv/connect', {
+      method: 'POST',
+      body: JSON.stringify({ host }),
+    });
+  },
+
+  status(host: string) {
+    return apiRequest<AndroidTvResult>('/androidtv/status', {
       method: 'POST',
       body: JSON.stringify({ host }),
     });

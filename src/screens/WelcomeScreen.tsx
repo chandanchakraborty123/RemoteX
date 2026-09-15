@@ -2,8 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Platform,
   Pressable,
@@ -21,8 +22,9 @@ import { colors, spacing } from '../theme';
 export function WelcomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { activeDevice, devices } = useApp();
+  const { activeDevice, devices, reconnectDevice, setActiveDevice } = useApp();
   const accessUrl = getAppAccessUrl();
+  const [opening, setOpening] = useState(false);
 
   const enter = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
@@ -45,6 +47,36 @@ export function WelcomeScreen() {
   const rise = enter.interpolate({ inputRange: [0, 1], outputRange: [18, 0] });
   const glowScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
   const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.55] });
+
+  const continueToRemote = async () => {
+    if (!activeDevice || opening) return;
+    setOpening(true);
+    try {
+      if (activeDevice.status !== 'connected' && activeDevice.paired) {
+        const ok = await reconnectDevice(activeDevice.id);
+        if (!ok) return;
+      } else {
+        await setActiveDevice(activeDevice);
+      }
+      navigation.navigate('Remote');
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  const continueLabel =
+    activeDevice?.status === 'connected'
+      ? 'Open'
+      : activeDevice?.paired
+        ? 'Reconnect'
+        : 'Open';
+
+  const continueEyebrow =
+    activeDevice?.status === 'connected'
+      ? 'Continue'
+      : activeDevice?.paired
+        ? 'Paired · one tap'
+        : 'Continue';
 
   return (
     <View style={styles.root}>
@@ -127,8 +159,9 @@ export function WelcomeScreen() {
 
           {activeDevice ? (
             <Pressable
-              onPress={() => navigation.navigate('Remote')}
-              style={({ pressed }) => [styles.continue, pressed && styles.pressed]}
+              onPress={() => void continueToRemote()}
+              disabled={opening}
+              style={({ pressed }) => [styles.continue, pressed && styles.pressed, opening && { opacity: 0.75 }]}
             >
               <View style={styles.continueLeft}>
                 <View
@@ -138,20 +171,28 @@ export function WelcomeScreen() {
                       backgroundColor:
                         activeDevice.status === 'connected'
                           ? colors.success
-                          : colors.textSecondary,
+                          : activeDevice.paired
+                            ? colors.primary
+                            : colors.textSecondary,
                     },
                   ]}
                 />
                 <View>
-                  <Text style={styles.continueEyebrow}>Continue</Text>
+                  <Text style={styles.continueEyebrow}>{continueEyebrow}</Text>
                   <Text style={styles.continueName} numberOfLines={1}>
                     {activeDevice.name}
                   </Text>
                 </View>
               </View>
               <View style={styles.continueAction}>
-                <Text style={styles.continueActionText}>Open</Text>
-                <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+                {opening ? (
+                  <ActivityIndicator color={colors.primary} size="small" />
+                ) : (
+                  <>
+                    <Text style={styles.continueActionText}>{continueLabel}</Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+                  </>
+                )}
               </View>
             </Pressable>
           ) : (

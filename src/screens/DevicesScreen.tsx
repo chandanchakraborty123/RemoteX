@@ -17,11 +17,29 @@ export function DevicesScreen() {
     setActiveDevice,
     disconnectDevice,
     disconnectAllDevices,
+    reconnectDevice,
     recent,
   } = useApp();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const connectedCount = devices.filter((d) => d.status === 'connected').length;
+
+  const openDevice = async (id: string) => {
+    const device = devices.find((d) => d.id === id);
+    if (!device) return;
+    setBusyId(id);
+    if (device.status !== 'connected' && device.paired) {
+      const ok = await reconnectDevice(id);
+      if (!ok) {
+        setBusyId(null);
+        return;
+      }
+    } else {
+      await setActiveDevice(device);
+    }
+    setBusyId(null);
+    navigation.navigate('Remote');
+  };
 
   const onDisconnect = async (id: string) => {
     setBusyId(id);
@@ -90,12 +108,12 @@ export function DevicesScreen() {
           <View key={device.id} style={styles.deviceBlock}>
             <DeviceCard
               title={device.name}
-              subtitle={`${device.brand} · ${device.platform}${device.ipAddress ? ` · ${device.ipAddress}` : ''}`}
+              subtitle={`${device.brand} · ${device.platform}${device.ipAddress ? ` · ${device.ipAddress}` : ''}${
+                device.paired && device.status !== 'connected' ? ' · Paired' : ''
+              }`}
               status={device.status}
-              onPress={async () => {
-                await setActiveDevice(device);
-                navigation.navigate('Remote');
-              }}
+              paired={device.paired}
+              onPress={() => void openDevice(device.id)}
             />
             {device.status === 'connected' ? (
               <Pressable
@@ -109,6 +127,21 @@ export function DevicesScreen() {
                   <>
                     <Ionicons name="unlink-outline" size={16} color={colors.danger} />
                     <Text style={styles.disconnectText}>Disconnect</Text>
+                  </>
+                )}
+              </Pressable>
+            ) : device.paired ? (
+              <Pressable
+                style={styles.reconnectBtn}
+                disabled={!!busyId}
+                onPress={() => void openDevice(device.id)}
+              >
+                {busyId === device.id ? (
+                  <ActivityIndicator color={colors.primary} size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="refresh-outline" size={16} color={colors.primary} />
+                    <Text style={styles.reconnectText}>Reconnect</Text>
                   </>
                 )}
               </Pressable>
@@ -213,6 +246,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   disconnectText: { color: colors.danger, fontWeight: '700', fontSize: 13 },
+  reconnectBtn: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(88,101,242,0.12)',
+    minWidth: 120,
+    justifyContent: 'center',
+  },
+  reconnectText: { color: colors.primary, fontWeight: '700', fontSize: 13 },
   section: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.md },
   empty: { color: colors.textSecondary },
   recentRow: {

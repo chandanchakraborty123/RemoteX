@@ -9,6 +9,8 @@ interface DeviceCardProps {
   subtitle: string;
   icon?: keyof typeof Ionicons.glyphMap;
   status?: ConnectionStatus;
+  /** Saved pairing — can reconnect without a new code */
+  paired?: boolean;
   onPress?: () => void;
   selected?: boolean;
 }
@@ -18,6 +20,7 @@ export function DeviceCard({
   subtitle,
   icon = 'tv-outline',
   status,
+  paired,
   onPress,
   selected,
 }: DeviceCardProps) {
@@ -26,7 +29,18 @@ export function DeviceCard({
       ? colors.success
       : status === 'connecting'
         ? colors.warning
-        : colors.textSecondary;
+        : paired
+          ? colors.primary
+          : colors.textSecondary;
+
+  const statusLabel =
+    status === 'connected'
+      ? 'Connected'
+      : status === 'connecting'
+        ? 'Connecting'
+        : paired
+          ? 'Tap to reconnect'
+          : 'Offline';
 
   return (
     <Pressable
@@ -47,13 +61,7 @@ export function DeviceCard({
       {status ? (
         <View style={styles.statusWrap}>
           <View style={[styles.dot, { backgroundColor: statusColor }]} />
-          <Text style={[styles.status, { color: statusColor }]}>
-            {status === 'connected'
-              ? 'Connected'
-              : status === 'connecting'
-                ? 'Connecting'
-                : 'Offline'}
-          </Text>
+          <Text style={[styles.status, { color: statusColor }]}>{statusLabel}</Text>
         </View>
       ) : (
         <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />

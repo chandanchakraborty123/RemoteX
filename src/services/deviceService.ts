@@ -134,6 +134,8 @@ export const deviceService = {
             status: 'connected',
             favorite: device.favorite ?? false,
             driver: 'androidtv',
+            paired: true,
+            lastConnectedAt: Date.now(),
           },
         };
       }
@@ -154,6 +156,7 @@ export const deviceService = {
             status: 'connecting',
             favorite: device.favorite ?? false,
             driver: 'androidtv',
+            paired: false,
           },
         };
       }
@@ -206,16 +209,35 @@ export const deviceService = {
       if (!device.ipAddress) {
         return { ok: false, message: 'Missing device IP' };
       }
-      if (device.status !== 'connected') {
-        return { ok: false, message: 'Device disconnected' };
-      }
       try {
+        // Auto-reconnect for paired devices if UI still says offline
+        if (device.status !== 'connected' && device.paired) {
+          const link = await this.connect(device);
+          if (link.status !== 'connected') {
+            return {
+              ok: false,
+              message:
+                link.status === 'needs_pairing'
+                  ? 'Pairing expired — scan and pair again'
+                  : link.message,
+            };
+          }
+        } else if (device.status !== 'connected') {
+          return { ok: false, message: 'Device disconnected' };
+        }
+
         const result = await androidTvApi.command(
           device.ipAddress,
           action.type,
           action.payload,
         );
         if (!result.ok) {
+          if (result.status === 'disconnected' || result.status === 'needs_pairing') {
+            return {
+              ok: false,
+              message: result.error || 'Connection lost',
+            };
+          }
           return {
             ok: false,
             message: result.error || 'Command failed',

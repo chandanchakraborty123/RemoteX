@@ -78,6 +78,12 @@ async def connect(body: HostIn):
     return await session.connect()
 
 
+@router.post("/status")
+async def status(body: HostIn):
+    session = manager.get(body.host)
+    return await session.status()
+
+
 @router.post("/disconnect")
 async def disconnect(body: HostIn):
     session = manager.get(body.host)

@@ -11,7 +11,7 @@ import { colors, spacing, typography } from '../theme';
 export function FavoritesScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { favorites, devices, macros, setActiveDevice, runMacro } = useApp();
+  const { favorites, devices, macros, setActiveDevice, reconnectDevice, runMacro } = useApp();
 
   const items =
     favorites.length > 0
@@ -56,7 +56,12 @@ export function FavoritesScreen() {
               if (item.kind === 'device') {
                 const device = devices.find((d) => d.id === item.refId);
                 if (device) {
-                  await setActiveDevice(device);
+                  if (device.status !== 'connected' && device.paired) {
+                    const ok = await reconnectDevice(device.id);
+                    if (!ok) return;
+                  } else {
+                    await setActiveDevice(device);
+                  }
                   navigation.navigate('Remote');
                 }
               }

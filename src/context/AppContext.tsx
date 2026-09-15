@@ -34,6 +34,7 @@ interface AppContextValue {
   removeDevice: (id: string) => Promise<void>;
   disconnectDevice: (id: string) => Promise<void>;
   disconnectAllDevices: () => Promise<void>;
+  reconnectDevice: (id: string) => Promise<boolean>;
   updateSettings: (patch: Partial<AppSettings>) => Promise<void>;
   sendAction: (action: RemoteAction) => Promise<void>;
   runMacro: (macro: Macro) => Promise<void>;
@@ -55,8 +56,8 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [devices, setDevices] = useState<Device[]>(MOCK_DEVICES);
-  const [activeDevice, setActiveDeviceState] = useState<Device | null>(MOCK_DEVICES[0]);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [activeDevice, setActiveDeviceState] = useState<Device | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [macros, setMacros] = useState<Macro[]>(DEFAULT_MACROS);
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
@@ -78,7 +79,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (!mounted) return;
 
-      const nextDevices = storedDevices?.length ? storedDevices : MOCK_DEVICES;
+      // Prefer saved devices (incl. paired TVs). Seed mocks only on first launch.
+      const nextDevices = storedDevices ?? MOCK_DEVICES.map((d) => ({
+        ...d,
+        status: 'disconnected' as const,
+        paired: false,
+      }));
+      const normalized = nextDevices.map((d) => ({
+        ...d,
+        // Never boot as connected — reconnect explicitly
+        status: d.status === 'connected' ? ('disconnected' as const) : d.status,
+      }));
+
       const apiBaseUrl = resolveApiBaseUrl(storedSettings.apiBaseUrl);
       const nextSettings = {
         ...DEFAULT_SETTINGS,
@@ -86,13 +98,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         apiBaseUrl,
       };
       setApiBaseUrl(apiBaseUrl);
-      setDevices(nextDevices);
+      setDevices(normalized);
       setSettings(nextSettings);
       setMacros(storedMacros?.length ? storedMacros : DEFAULT_MACROS);
       setFavorites(
         storedFavorites.length
           ? storedFavorites
-          : nextDevices
+          : normalized
               .filter((d) => d.favorite)
               .map((d) => ({
                 id: `fav-${d.id}`,
@@ -103,13 +115,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               })),
       );
       setRecent(storedRecent);
-      setActiveDeviceState(
-        nextDevices.find((d) => d.id === activeId) ??
-          nextDevices.find((d) => d.status === 'connected') ??
-          nextDevices[0] ??
-          null,
-      );
+      const active =
+        normalized.find((d) => d.id === activeId) ??
+        normalized.find((d) => d.paired) ??
+        normalized[0] ??
+        null;
+      setActiveDeviceState(active);
       setReady(true);
+
+      // One-tap style: auto-reconnect last/paired Android TVs in background
+      const targets = normalized.filter(
+        (d) => d.paired && d.driver === 'androidtv' && d.ipAddress,
+      );
+      for (const device of targets.slice(0, 3)) {
+        if (!mounted) break;
+        try {
+          const result = await deviceService.connect(device);
+          if (!mounted) break;
+          if (result.status === 'connected') {
+            setDevices((prev) => {
+              const next = prev.map((d) => (d.id === device.id ? result.device : d));
+              void storageService.saveDevices(next);
+              return next;
+            });
+            setActiveDeviceState((current) =>
+              current?.id === device.id || current?.id === active?.id
+                ? result.device
+                : current,
+            );
+          }
+        } catch {
+          // stay offline
+        }
+      }
     })();
 
     return () => {
@@ -197,6 +235,62 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (connected.length > 0) pushRecent(label);
   }, [pushRecent]);
 
+  const reconnectDevice = useCallback(
+    async (id: string) => {
+      let target: Device | undefined;
+      setDevices((prev) => {
+        target = prev.find((d) => d.id === id);
+        if (!target) return prev;
+        const next = prev.map((d) =>
+          d.id === id ? { ...d, status: 'connecting' as const } : d,
+        );
+        void storageService.saveDevices(next);
+        return next;
+      });
+      setActiveDeviceState((current) =>
+        current?.id === id ? { ...current, status: 'connecting' } : current,
+      );
+
+      if (!target) {
+        setFeedback('Device not found');
+        return false;
+      }
+
+      const result = await deviceService.connect(target);
+      if (result.status === 'connected') {
+        setDevices((prev) => {
+          const next = prev.map((d) => (d.id === id ? result.device : d));
+          void storageService.saveDevices(next);
+          return next;
+        });
+        setActiveDeviceState(result.device);
+        await storageService.setActiveDeviceId(result.device.id);
+        setFeedback(`Connected · ${result.device.name}`);
+        pushRecent(`Reconnected ${result.device.name}`);
+        return true;
+      }
+
+      setDevices((prev) => {
+        const next = prev.map((d) =>
+          d.id === id ? { ...d, status: 'disconnected' as const } : d,
+        );
+        void storageService.saveDevices(next);
+        return next;
+      });
+      setActiveDeviceState((current) =>
+        current?.id === id ? { ...current, status: 'disconnected' } : current,
+      );
+
+      if (result.status === 'needs_pairing') {
+        setFeedback('Need pairing code — use Scan');
+      } else {
+        setFeedback(result.message);
+      }
+      return false;
+    },
+    [pushRecent],
+  );
+
   const updateSettings = useCallback(async (patch: Partial<AppSettings>) => {
     setSettings((prev) => {
       const next = { ...prev, ...patch };
@@ -211,11 +305,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const sendAction = useCallback(
     async (action: RemoteAction) => {
       await triggerHaptic(settings.hapticFeedback);
-      const result = await deviceService.sendCommand(activeDevice, action);
+      let device = activeDevice;
+      if (!device) {
+        setFeedback('No device connected');
+        return;
+      }
+      if (device.status !== 'connected') {
+        if (!device.paired) {
+          setFeedback('Device disconnected');
+          return;
+        }
+        const ok = await reconnectDevice(device.id);
+        if (!ok) return;
+        device = { ...device, status: 'connected', paired: true };
+      }
+      const result = await deviceService.sendCommand(device, action);
       setFeedback(result.message);
       if (result.ok) pushRecent(result.message);
+      if (!result.ok && /disconnect|connection lost|not connected/i.test(result.message)) {
+        setDevices((prev) => {
+          const next = prev.map((d) =>
+            d.id === device!.id ? { ...d, status: 'disconnected' as const } : d,
+          );
+          void storageService.saveDevices(next);
+          return next;
+        });
+        setActiveDeviceState((current) =>
+          current?.id === device!.id ? { ...current, status: 'disconnected' } : current,
+        );
+      }
     },
-    [activeDevice, pushRecent, settings.hapticFeedback],
+    [activeDevice, pushRecent, reconnectDevice, settings.hapticFeedback],
   );
 
   const runMacro = useCallback(
@@ -269,6 +389,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       removeDevice,
       disconnectDevice,
       disconnectAllDevices,
+      reconnectDevice,
       updateSettings,
       sendAction,
       runMacro,
@@ -289,6 +410,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       removeDevice,
       disconnectDevice,
       disconnectAllDevices,
+      reconnectDevice,
       updateSettings,
       sendAction,
       runMacro,

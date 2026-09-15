@@ -52,9 +52,13 @@ APP_LINKS: dict[str, str] = {
     "youtube": "https://www.youtube.com",
     "netflix": "https://www.netflix.com/title",
     "prime": "https://app.primevideo.com",
-    "hotstar": "https://www.hotstar.com",
+    "amazon": "https://app.primevideo.com",
+    "hotstar": "https://www.hotstar.com/in",
+    "jiohotstar": "https://www.hotstar.com/in",
+    "disney": "https://www.disneyplus.com",
+    "spotify": "https://open.spotify.com",
     "assistant": "https://assistant.google.com",
-    "live_tv": "https://www.youtube.com/tv",
+    # live_tv handled specially via key command
 }
 
 
@@ -63,6 +67,11 @@ def _safe_host_dir(host: str) -> Path:
     path = CERT_ROOT / safe
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def certs_exist(host: str) -> bool:
+    cert_dir = _safe_host_dir(host)
+    return (cert_dir / "cert.pem").exists() and (cert_dir / "key.pem").exists()
 
 
 class AndroidTVSession:
@@ -83,8 +92,22 @@ class AndroidTVSession:
         self._connected = False
         self._lock = asyncio.Lock()
 
+    @property
+    def paired(self) -> bool:
+        return Path(self.certfile).exists() and Path(self.keyfile).exists()
+
     async def ensure_cert(self) -> None:
         await self.remote.async_generate_cert_if_missing()
+
+    async def status(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "host": self.host,
+            "paired": self.paired,
+            "connected": self.is_connected,
+            "name": self.device_name,
+            "mac": self.mac,
+        }
 
     async def probe(self) -> dict[str, Any]:
         await self.ensure_cert()
@@ -92,9 +115,20 @@ class AndroidTVSession:
             name, mac = await self.remote.async_get_name_and_mac()
             self.device_name = name
             self.mac = mac
-            return {"ok": True, "name": name, "mac": mac, "host": self.host}
+            return {
+                "ok": True,
+                "name": name,
+                "mac": mac,
+                "host": self.host,
+                "paired": self.paired,
+            }
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "host": self.host, "error": str(exc)}
+            return {
+                "ok": False,
+                "host": self.host,
+                "paired": self.paired,
+                "error": str(exc),
+            }
 
     async def start_pairing(self) -> dict[str, Any]:
         await self.ensure_cert()
@@ -150,6 +184,7 @@ class AndroidTVSession:
                 "is_on": bool(getattr(self.remote, "is_on", False)),
                 "current_app": getattr(self.remote, "current_app", None),
                 "status": "connected",
+                "paired": True,
             }
         except InvalidAuth:
             self._connected = False
@@ -157,6 +192,7 @@ class AndroidTVSession:
                 "ok": False,
                 "host": self.host,
                 "status": "needs_pairing",
+                "paired": self.paired,
                 "error": "Pairing required",
             }
         except (CannotConnect, ConnectionClosed) as exc:
@@ -165,6 +201,7 @@ class AndroidTVSession:
                 "ok": False,
                 "host": self.host,
                 "status": "disconnected",
+                "paired": self.paired,
                 "error": str(exc),
             }
         except Exception as exc:  # noqa: BLE001
@@ -173,6 +210,7 @@ class AndroidTVSession:
                 "ok": False,
                 "host": self.host,
                 "status": "disconnected",
+                "paired": self.paired,
                 "error": str(exc),
             }
 
@@ -214,7 +252,10 @@ class AndroidTVSession:
                     return {"ok": True, "message": f'Typed "{text}"'}
 
                 if action == "OPEN_APP":
-                    app = str(payload.get("app", "")).lower()
+                    app = str(payload.get("app", "")).lower().strip()
+                    if app in {"live", "live_tv", "livetv"}:
+                        self.remote.send_key_command("TV")
+                        return {"ok": True, "message": "Opened Live TV"}
                     link = APP_LINKS.get(app) or str(payload.get("url") or "")
                     if not link:
                         return {
@@ -223,6 +264,10 @@ class AndroidTVSession:
                         }
                     self.remote.send_launch_app_command(link)
                     return {"ok": True, "message": f"Opened {app or link}"}
+
+                if action == "LIVE_TV":
+                    self.remote.send_key_command("TV")
+                    return {"ok": True, "message": "Live TV"}
 
                 if action == "SEARCH":
                     query = str(payload.get("query", ""))

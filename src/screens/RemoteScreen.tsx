@@ -128,9 +128,8 @@ export function RemoteScreen() {
     runMacro,
     macros,
     toggleFavoriteDevice,
-    setFeedback,
-    upsertDevice,
     disconnectDevice,
+    reconnectDevice,
     settings,
     updateSettings,
   } = useApp();
@@ -138,6 +137,7 @@ export function RemoteScreen() {
   const [listening, setListening] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [reconnecting, setReconnecting] = useState(false);
 
   const padPos: PadPosition = settings.touchpadPosition ?? 'center';
 
@@ -163,14 +163,13 @@ export function RemoteScreen() {
   };
 
   const reconnect = async () => {
-    if (!activeDevice) return;
-    const result = await deviceService.connect({ ...activeDevice, status: 'connecting' });
-    if (result.status === 'connected') {
-      await upsertDevice(result.device);
-      setFeedback('Connected');
-      return;
+    if (!activeDevice || reconnecting) return;
+    setReconnecting(true);
+    try {
+      await reconnectDevice(activeDevice.id);
+    } finally {
+      setReconnecting(false);
     }
-    setFeedback(result.status === 'needs_pairing' ? 'Need pairing code' : result.message);
   };
 
   const touchSection = useMemo(
@@ -228,10 +227,25 @@ export function RemoteScreen() {
           <Text
             style={[
               styles.status,
-              { color: activeDevice.status === 'connected' ? colors.success : colors.danger },
+              {
+                color:
+                  activeDevice.status === 'connected'
+                    ? colors.success
+                    : activeDevice.status === 'connecting'
+                      ? colors.warning
+                      : activeDevice.paired
+                        ? colors.primary
+                        : colors.danger,
+              },
             ]}
           >
-            {activeDevice.status === 'connected' ? 'Connected' : 'Disconnected'}
+            {activeDevice.status === 'connected'
+              ? 'Connected'
+              : activeDevice.status === 'connecting'
+                ? 'Connecting…'
+                : activeDevice.paired
+                  ? 'Paired · offline'
+                  : 'Disconnected'}
           </Text>
         </View>
         <Pressable
@@ -247,8 +261,18 @@ export function RemoteScreen() {
       </View>
 
       {activeDevice.status !== 'connected' ? (
-        <Pressable style={styles.reconnect} onPress={() => void reconnect()}>
-          <Text style={styles.reconnectText}>Tap to reconnect</Text>
+        <Pressable
+          style={[styles.reconnect, reconnecting && { opacity: 0.7 }]}
+          disabled={reconnecting}
+          onPress={() => void reconnect()}
+        >
+          <Text style={styles.reconnectText}>
+            {reconnecting
+              ? 'Reconnecting…'
+              : activeDevice.paired
+                ? 'Tap to reconnect (no code needed)'
+                : 'Tap to reconnect'}
+          </Text>
         </Pressable>
       ) : null}
 
