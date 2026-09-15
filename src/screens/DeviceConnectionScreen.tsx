@@ -70,21 +70,21 @@ export function DeviceConnectionScreen({
       setScanning(false);
       return;
     }
-    setScanMessage(
-      isLanTv ? 'Scanning Wi‑Fi for your TV…' : 'Searching for devices...',
-    );
-    const found = await deviceService.discover(brand.connectionMethods, {
-      platform: brand.platform,
-      realScan: isLanTv,
-    });
-    setDevices(found);
-    setScanMessage(
-      found.length
-        ? `Found ${found.length} device${found.length === 1 ? '' : 's'} nearby`
-        : isLanTv
-          ? 'No TV found yet. Turn the TV on, stay on the same Wi‑Fi, then Scan Again — or enter IP if you know it.'
-          : 'No devices found.',
-    );
+      setScanMessage(
+        isLanTv ? 'Looking for your TV…' : 'Searching for devices…',
+      );
+      const found = await deviceService.discover(brand.connectionMethods, {
+        platform: brand.platform,
+        realScan: isLanTv,
+      });
+      setDevices(found);
+      setScanMessage(
+        found.length
+          ? `Found ${found.length} nearby`
+          : isLanTv
+            ? 'Nothing found yet. Keep the TV on, same Wi‑Fi, then try again — or enter the IP if you know it.'
+            : 'No devices found.',
+      );
     setScanning(false);
   }, [brand.connectionMethods, brand.platform, isAc, isLanTv]);
 
@@ -286,12 +286,12 @@ export function DeviceConnectionScreen({
       {isLanTv ? (
         <View style={styles.infoBox}>
           <Text style={styles.infoTitle}>
-            {isWebOs ? 'LG webOS pairing' : 'Automatic scan'}
+            {isWebOs ? 'Connect your LG TV' : 'Find your TV'}
           </Text>
           <Text style={styles.infoText}>
             {isWebOs
-              ? 'We find your LG on Wi‑Fi. First connect shows an Accept prompt on the TV — press Yes, then Pair.'
-              : 'We find your TV on Wi‑Fi by name — you don’t need to know the IP. Tap Connect, then enter the code shown on the TV.'}
+              ? 'Keep your TV on and on the same Wi‑Fi. When you connect, tap Yes on the TV to allow RemoteX.'
+              : 'Keep your TV on and on the same Wi‑Fi. Tap Connect on a found TV, then enter the code shown on screen.'}
           </Text>
           <Text
             style={[
@@ -300,20 +300,20 @@ export function DeviceConnectionScreen({
             ]}
           >
             {backendOk == null
-              ? 'Checking backend...'
+              ? 'Checking connection…'
               : backendOk
-                ? 'Backend online · ready to scan'
-                : 'Backend offline — start it to enable scanning'}
+                ? 'Ready to find devices'
+                : 'Can’t reach the PC helper — start it, then try again'}
           </Text>
         </View>
       ) : null}
 
       {isAc ? (
         <View style={styles.infoBox}>
-          <Text style={styles.infoTitle}>AC remote</Text>
+          <Text style={styles.infoTitle}>Air conditioner</Text>
           <Text style={styles.infoText}>
-            Power, temp, mode, and fan work now. IR needs a blaster (Broadlink / ESP)
-            later; Wi‑Fi brands can plug into the same API.
+            Set power, temperature, mode, and fan from your phone. Pick IR or Wi‑Fi
+            below, then connect.
           </Text>
         </View>
       ) : null}
@@ -345,7 +345,7 @@ export function DeviceConnectionScreen({
         <Text style={styles.section}>
           {scanning
             ? scanMessage || 'Searching for devices...'
-            : scanMessage || 'Discovered devices'}
+            : scanMessage || 'Nearby devices'}
         </Text>
         {scanning ? <ActivityIndicator color={colors.primary} /> : null}
       </View>

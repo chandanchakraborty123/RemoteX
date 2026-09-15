@@ -1,84 +1,46 @@
 # RemoteX
 
-Premium universal smart remote control — React Native (Expo) + FastAPI.
+Premium universal smart remote — **Expo (React Native)** + **FastAPI**.
 
-## Phase 1 (current)
+Control Android TV / Xstream, LG webOS, and AC (IR / Wi‑Fi stub) from your phone on the same Wi‑Fi.
 
-Fully navigable MVP with mock device drivers:
+---
 
-Welcome → Device Type → Brand → Connection → Remote
+## Quick start
 
-Includes touchpad, keyboard, voice/AI stubs, macros, favorites, and settings.
-
-## Run mobile app
+**Full beginner guide:** see **[SETUP.md](./SETUP.md)** (install, run BE + FE, phone access, pairing, troubleshooting).
 
 ```bash
+# One-time
 npm install
-npm start
+cd backend && pip install -r requirements.txt && cd ..
+
+# Every day — two terminals
+npm run backend    # API  → http://localhost:8000
+npm run web        # App  → http://localhost:8081
 ```
 
-Then open in Expo Go, Android emulator, iOS simulator, or web.
+On your phone (same Wi‑Fi): `http://YOUR_PC_IP:8081`  
+API auto-points to `http://YOUR_PC_IP:8000`.
 
-## Open from phone / any device
+---
 
-1. Start backend + web (LAN):
+## Features (current)
 
-```bash
-npm run backend
-npm run web
-```
+| Device | Status |
+|--------|--------|
+| Android TV / Google TV / Xstream | Real protocol (pair once, reconnect) |
+| LG webOS | Real protocol (Accept on TV) |
+| AC | Power / Temp / Mode / Fan UI + bridge stub |
+| Samsung Tizen | Listed (mock until driver ships) |
 
-2. On your phone (same Wi‑Fi), open:
-
-`http://YOUR_PC_IP:8081`
-
-Example: `http://192.168.1.3:8081`
-
-The app auto-points the API to `http://YOUR_PC_IP:8000` — no Settings change needed.
-
-## Phase 5 — Android TV / Google TV
-
-Real control uses the Android TV Remote Protocol v2 (same as the Google TV app)
-through a local FastAPI bridge on your PC.
-
-### 1. Start the backend
-
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-`--host 0.0.0.0` lets your phone reach the PC on the same Wi‑Fi.
-
-### 2. Point the app at the backend
-
-- **Web / mobile browser:** open via your PC LAN IP — API follows automatically
-- Emulator: defaults work (`10.0.2.2`)
-- Native Expo Go: Settings → Android TV bridge if needed
-
-### 3. Pair a TV
-
-1. Add device → TV → Android TV / Google TV brand (Sony, Xiaomi, TCL, …)
-2. Enter the TV IP
-3. When prompted, type the 6-digit code shown on the TV
-4. Use the remote (power, nav, volume, keyboard, apps)
-
-Supported now: power, D-pad, volume/mute, home/back/menu, text input, YouTube/Netflix/Prime launch links.
-
+---
 
 ## Project structure
 
-```
-src/
-  screens/
-  components/
-  services/
-  types/
-  data/
-  navigation/
-  theme/
-  context/
-backend/
-pc-agent/
+```text
+src/         App (screens, services, UI)
+backend/     FastAPI (androidtv, webos, ac)
+pc-agent/    Future PC agent notes
+SETUP.md     How to run everything
 ```

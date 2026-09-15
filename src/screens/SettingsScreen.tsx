@@ -27,9 +27,9 @@ export function SettingsScreen() {
 
   const testBackend = async () => {
     await updateSettings({ apiBaseUrl: apiUrl.trim() });
-    setBackendStatus('Checking...');
+    setBackendStatus('Checking…');
     const ok = await androidTvApi.health();
-    setBackendStatus(ok ? 'Backend online' : 'Backend offline');
+    setBackendStatus(ok ? 'Connected' : 'Can’t reach PC helper');
   };
 
   return (
@@ -39,11 +39,11 @@ export function SettingsScreen() {
     >
       <Text style={styles.title}>Settings</Text>
 
-      <Text style={styles.section}>Android TV bridge</Text>
+      <Text style={styles.section}>PC helper</Text>
       <View style={styles.card}>
         <Text style={styles.meta}>
-          On web/mobile browser, the API host follows whatever address you used to
-          open the app (your PC IP). Override only if needed.
+          RemoteX uses a small helper on your PC to talk to TVs. On phone/browser it
+          usually follows the address you opened the app with. Change only if needed.
         </Text>
         <TextInput
           value={apiUrl}
